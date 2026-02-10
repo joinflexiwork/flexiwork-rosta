@@ -1,0 +1,38 @@
+{
+  "name": "flexiwork-rosta",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "backup:mentlast": "powershell -ExecutionPolicy Bypass -File ./scripts/backup-to-mentlast.ps1",
+    "dev": "next dev",
+    "dev:clean": "node -e \"try{require('fs').unlinkSync('.next/dev.lock');console.log('Removed .next/dev.lock');}catch(e){}\" && next dev",
+    "dev:port": "next dev --port 3001",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@supabase/auth-helpers-nextjs": "^0.15.0",
+    "@supabase/supabase-js": "^2.95.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^0.563.0",
+    "next": "16.1.6",
+    "react": "19.2.3",
+    "react-big-calendar": "^1.19.4",
+    "react-dom": "19.2.3",
+    "resend": "^6.9.1",
+    "tailwind-merge": "^3.4.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
