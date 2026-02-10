@@ -1,0 +1,13 @@
+# Next.js 16 App Router on Netlify
+# In Netlify UI: leave "Publish directory" empty so the Next.js plugin controls output.
+
+[build]
+  command = "npm run build"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Essential Next.js plugin: enables serverless functions for SSR/API and correct routing.
+# Without this, Netlify may serve the wrong output and all routes can 404.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
