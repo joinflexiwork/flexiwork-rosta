@@ -22,7 +22,7 @@ import {
 import InviteWorkerModal from '@/components/InviteWorkerModal'
 import PullStaffModal from '@/components/PullStaffModal'
 
-type ShiftRow = Record<string, unknown> & {
+export type ShiftRow = Record<string, unknown> & {
   id: string
   shift_date?: string
   start_time?: string

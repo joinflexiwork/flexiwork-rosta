@@ -32,7 +32,7 @@ import { inviteEmployeesToShift, pullAvailableWorkers } from '@/lib/services/inv
 import { getMyAllocatedShifts } from '@/lib/services/allocations'
 import { supabase } from '@/lib/supabase'
 import PullStaffModal from '@/components/PullStaffModal'
-import FillShiftModal from '@/components/roster/FillShiftModal'
+import FillShiftModal, { type ShiftRow } from '@/components/roster/FillShiftModal'
 
 /** Week start = Monday (ISO). Returns YYYY-MM-DD. */
 function getMonday(d: Date): string {
@@ -41,13 +41,6 @@ function getMonday(d: Date): string {
 }
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-
-type ShiftRow = Record<string, unknown> & {
-  headcount_filled?: number
-  headcount_needed?: number
-  allocations?: unknown[]
-  invites?: { status: string }[]
-}
 
 type CalendarView = 'weekly' | 'monthly'
 
@@ -409,7 +402,7 @@ export default function ViewRosterPage() {
       {/* Fill Shift modal (edit, replace worker, delete, allocate) */}
       {actionModal === 'fill' && selectedShift && (
         <FillShiftModal
-          shift={(shifts.find((s) => String(s.id) === String(selectedShift?.id)) ?? selectedShift) as ShiftRow}
+          shift={shifts.find((s) => String(s.id) === String(selectedShift?.id)) ?? selectedShift}
           organisationId={organisationId}
           onClose={() => {
             setActionModal(null)
