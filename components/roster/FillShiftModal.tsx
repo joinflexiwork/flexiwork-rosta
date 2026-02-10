@@ -118,7 +118,7 @@ export default function FillShiftModal({
           getTeamMembers(organisationId),
         ])
         if (!cancelled) {
-          setRoles((rolesData ?? []) as Record<string, unknown>[])
+          setRoles((rolesData ?? []) as unknown as Record<string, unknown>[])
           setEmployees((employeesData ?? []).filter((e: Record<string, unknown>) => e.status === 'active'))
         }
       } catch (e) {

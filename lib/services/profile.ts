@@ -50,8 +50,8 @@ export async function getWorkerProfile(teamMemberId: string): Promise<WorkerProf
   if (memberErr || !member) return null
 
   const profile = member.profile as { full_name?: string; email?: string; avatar_url?: string; phone?: string } | null
-  const primaryVenue = member.primary_venue as { id: string; name: string; address?: string } | null
-  const rolesData = (member.roles ?? []) as Array<{ role: { id: string; name: string; colour?: string } | null }>
+  const primaryVenue = (member.primary_venue ?? null) as unknown as { id: string; name: string; address?: string } | null
+  const rolesData = (member.roles ?? []) as unknown as Array<{ role: { id: string; name: string; colour?: string } | null }>
   const certs = member.certifications as string[] | null
   const certList = Array.isArray(certs) ? certs : []
 
@@ -66,7 +66,7 @@ export async function getWorkerProfile(teamMemberId: string): Promise<WorkerProf
     joinedDate: member.joined_at ?? null,
     createdAt: member.created_at,
     employeeId: String(member.id).slice(0, 8).toUpperCase(),
-    roles: rolesData.map((r) => r.role).filter(Boolean) as { id: string; name: string; colour?: string }[],
+    roles: rolesData.map((r) => r.role).filter(Boolean) as unknown as { id: string; name: string; colour?: string }[],
     certifications: certList,
     organisationId: member.organisation_id,
   }

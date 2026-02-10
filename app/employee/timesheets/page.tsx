@@ -61,11 +61,12 @@ export default function EmployeeTimesheetsPage() {
   }, [userId, tab, dailyDate, weekStart, month])
 
   const totalHours = records.reduce((sum, r) => sum + Number(r.total_hours ?? 0), 0)
-  const byStatus = records.reduce((acc, r) => {
+  const byStatus = records.reduce<Record<string, number>>((acc, r) => {
     const s = String(r.status ?? r.manual_entry_status ?? 'pending')
-    acc[s] = (acc[s] || 0) + 1
+    const prev = acc[s] ?? 0
+    acc[s] = prev + 1
     return acc
-  }, {} as Record<string, number>)
+  }, {})
 
   return (
     <div className="max-w-4xl mx-auto p-6">
