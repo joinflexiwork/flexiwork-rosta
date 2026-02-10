@@ -7,7 +7,7 @@ import { getRolesByOrg } from '@/lib/services/roles'
 import { getVenuesByOrg } from '@/lib/services/venues'
 import { getOrganisationIdForCurrentUser } from '@/lib/services/organisations'
 import { supabase } from '@/lib/supabase'
-import FillShiftModal from '@/components/roster/FillShiftModal'
+import FillShiftModal, { type ShiftRow } from '@/components/roster/FillShiftModal'
 
 function getMonday(d: Date) {
   const date = new Date(d)
@@ -22,12 +22,12 @@ export default function RotaPage() {
   const [selectedVenue, setSelectedVenue] = useState<string>('')
   const [venues, setVenues] = useState<Record<string, unknown>[]>([])
   const [roles, setRoles] = useState<Record<string, unknown>[]>([])
-  const [shifts, setShifts] = useState<Record<string, unknown>[]>([])
+  const [shifts, setShifts] = useState<ShiftRow[]>([])
   const [organisationId, setOrganisationId] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showAllocateModal, setShowAllocateModal] = useState(false)
-  const [selectedShift, setSelectedShift] = useState<Record<string, unknown> | null>(null)
+  const [selectedShift, setSelectedShift] = useState<ShiftRow | null>(null)
 
   useEffect(() => {
     loadData()
@@ -69,7 +69,7 @@ export default function RotaPage() {
         venue_id: selectedVenue,
         week_start: weekStart,
       })
-      setShifts(rotaData as unknown as Record<string, unknown>[])
+      setShifts((rotaData ?? []) as unknown as ShiftRow[])
     } catch (error) {
       console.error('Error loading rota:', error)
     }
@@ -204,7 +204,7 @@ export default function RotaPage() {
                     const date = new Date(weekStart)
                     date.setDate(date.getDate() + dayIdx)
                     const dateStr = date.toISOString().split('T')[0]
-                    const dayShifts = shifts.filter((s) => s.shift_date === dateStr) as Record<string, unknown>[]
+                    const dayShifts = shifts.filter((s) => s.shift_date === dateStr)
                     return (
                       <td key={dayIdx} className="p-2 border-r border-gray-200 last:border-r-0 align-top">
                         <div className="space-y-2 min-h-[80px]">
@@ -282,7 +282,7 @@ export default function RotaPage() {
 
       {showAllocateModal && selectedShift && (
         <FillShiftModal
-          shift={(shifts.find((s) => String(s.id) === String(selectedShift?.id)) ?? selectedShift) as Record<string, unknown> & { id: string; allocations?: unknown[]; role?: { id?: string; name?: string }; venue?: { name?: string; id?: string }; creator?: { full_name?: string } }}
+          shift={shifts.find((s) => String(s.id) === String(selectedShift?.id)) ?? selectedShift}
           organisationId={organisationId}
           onClose={() => {
             setShowAllocateModal(false)
