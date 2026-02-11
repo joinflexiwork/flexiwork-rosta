@@ -1,12 +1,19 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
+import Link from 'next/link'
 import { Users, UserPlus, X, Trash2, Star } from 'lucide-react'
-import { getTeamMembers, inviteEmployee, inviteManager, deleteTeamMember, getTeamMemberWithRoles, updateTeamMemberProfile } from '@/lib/services/team'
+import { getTeamMembers, deleteTeamMember, getTeamMemberWithRoles, updateTeamMemberProfile } from '@/lib/services/team'
 import { getRolesByOrg } from '@/lib/services/roles'
 import { getVenuesByOrg } from '@/lib/services/venues'
 import { getOrganisationIdForCurrentUser } from '@/lib/services/organisations'
 import { getOrganisationSettings } from '@/lib/services/settings'
+import { getTeamHierarchy } from '@/app/actions/hierarchy'
+import { supabase } from '@/lib/supabase'
+import type { HierarchyLevel } from '@/lib/types/hierarchy'
+import { HIERARCHY_RULES } from '@/lib/types/hierarchy'
+import HierarchyTree from './_components/HierarchyTree'
+import InviteModal from './_components/InviteModal'
 
 export default function TeamPage() {
   const [organisationId, setOrganisationId] = useState<string>('')
@@ -15,14 +22,16 @@ export default function TeamPage() {
   const [roles, setRoles] = useState<Record<string, unknown>[]>([])
   const [venues, setVenues] = useState<Record<string, unknown>[]>([])
   const [loading, setLoading] = useState(true)
-  const [showInviteEmployee, setShowInviteEmployee] = useState(false)
-  const [showInviteManager, setShowInviteManager] = useState(false)
+  const [inviteModalType, setInviteModalType] = useState<HierarchyLevel | null>(null)
   const [filterRoleIds, setFilterRoleIds] = useState<string[]>([])
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterSearch, setFilterSearch] = useState<string>('')
   const [memberToDelete, setMemberToDelete] = useState<Record<string, unknown> | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [profileMember, setProfileMember] = useState<Record<string, unknown> | null>(null)
+  const [hierarchyData, setHierarchyData] = useState<{ members: Record<string, unknown>[]; chain: { manager_id: string; subordinate_id: string }[] } | null>(null)
+  const [myHierarchyLevel, setMyHierarchyLevel] = useState<HierarchyLevel>('employer')
+  const [currentUserId, setCurrentUserId] = useState<string>('')
 
   useEffect(() => {
     loadData()
@@ -33,16 +42,24 @@ export default function TeamPage() {
       const orgId = await getOrganisationIdForCurrentUser()
       if (!orgId) return
       setOrganisationId(orgId)
-      const [membersData, rolesData, venuesData, settings] = await Promise.all([
+      const [membersData, rolesData, venuesData, settings, hierarchy] = await Promise.all([
         getTeamMembers(orgId),
         getRolesByOrg(orgId),
         getVenuesByOrg(orgId),
         getOrganisationSettings(orgId),
+        getTeamHierarchy(orgId).catch(() => ({ members: [], chain: [] })),
       ])
       setMembers(membersData)
       setRoles((rolesData as unknown) as Record<string, unknown>[])
       setVenues((venuesData as unknown) as Record<string, unknown>[])
       setShowRatings(settings.show_ratings !== false)
+      setHierarchyData({ members: hierarchy.members, chain: hierarchy.chain })
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setCurrentUserId(user.id)
+        const myMember = hierarchy.members.find((m) => (m as { user_id?: string }).user_id === user.id) as { hierarchy_level?: HierarchyLevel } | undefined
+        setMyHierarchyLevel(myMember?.hierarchy_level ?? 'employer')
+      }
     } catch (e) {
       console.error('Team load error:', e)
     } finally {
@@ -109,25 +126,54 @@ export default function TeamPage() {
       <div className="max-w-7xl mx-auto px-6 py-6">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Manage Team</h1>
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => setShowInviteEmployee(true)}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium flex items-center gap-2"
-            >
-              <UserPlus className="w-4 h-4" />
-              Invite Employee
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowInviteManager(true)}
-              className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg font-medium flex items-center gap-2"
-            >
-              <UserPlus className="w-4 h-4" />
-              Invite Manager
-            </button>
+          <div className="flex gap-2 flex-wrap">
+            {(() => {
+              const rules = HIERARCHY_RULES[myHierarchyLevel]
+              const canInvite = rules?.canInvite ?? []
+              if (canInvite.length === 0) {
+                return (
+                  <span className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg bg-gray-50">
+                    You cannot invite members
+                  </span>
+                )
+              }
+              const labels: Record<HierarchyLevel, string> = {
+                employer: 'Invite Employer',
+                gm: 'Invite General Manager',
+                agm: 'Invite Assistant GM',
+                shift_leader: 'Invite Shift Leader',
+                worker: 'Invite Worker',
+              }
+              return canInvite.map((level, idx) => {
+                const isPrimary = idx === 0
+                const isOutline = idx === canInvite.length - 1 && canInvite.length > 1
+                return (
+                  <button
+                    key={level}
+                    type="button"
+                    onClick={() => setInviteModalType(level)}
+                    className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 ${
+                      isPrimary
+                        ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:opacity-90'
+                        : isOutline
+                          ? 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                          : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                    }`}
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    {labels[level] ?? `Invite ${level}`}
+                  </button>
+                )
+              })
+            })()}
           </div>
         </div>
+
+        {hierarchyData && (hierarchyData.members.length > 0 || hierarchyData.chain.length > 0) && (
+          <div className="mb-6">
+            <HierarchyTree members={hierarchyData.members as { id: string; user_id: string | null; organisation_id: string; hierarchy_level?: HierarchyLevel; profile?: { full_name?: string; email?: string } }[]} chain={hierarchyData.chain} />
+          </div>
+        )}
 
         {/* Filter bar: roles from getRolesByOrg (roles table where organisation_id = current user's org) */}
         <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-white rounded-xl shadow-sm border border-gray-200">
@@ -217,6 +263,7 @@ export default function TeamPage() {
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Type</th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Status</th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Role</th>
+                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Shifts</th>
                     {showRatings && (
                       <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Rating{sortedByRating ? ' ↓' : ''}</th>
                     )}
@@ -245,6 +292,11 @@ export default function TeamPage() {
                           </span>
                         </td>
                         <td className="py-3 px-4 text-sm text-gray-600">{roleNames}</td>
+                        <td className="py-3 px-4 text-sm text-gray-600">
+                          <Link href={`/dashboard/workers/${m.id}`} className="text-blue-600 hover:underline">
+                            View
+                          </Link>
+                        </td>
                         {showRatings && (
                           <td className="py-3 px-4">
                             {memberRating != null ? (
@@ -307,6 +359,8 @@ export default function TeamPage() {
           organisationId={organisationId}
           roles={roles}
           venues={venues}
+          currentUserHierarchyLevel={myHierarchyLevel}
+          currentUserId={currentUserId}
           onClose={() => setProfileMember(null)}
           onSave={() => {
             setProfileMember(null)
@@ -315,30 +369,34 @@ export default function TeamPage() {
         />
       )}
 
-      {showInviteManager && (
-        <InviteManagerModal
+      {inviteModalType && organisationId && (
+        <InviteModal
+          isOpen={true}
+          onClose={() => setInviteModalType(null)}
+          inviteType={inviteModalType as 'gm' | 'agm' | 'shift_leader' | 'worker'}
+          inviterId={currentUserId}
           organisationId={organisationId}
-          onClose={() => setShowInviteManager(false)}
-          onSuccess={() => {
-            setShowInviteManager(false)
-            loadData()
-          }}
-        />
-      )}
-      {showInviteEmployee && (
-        <InviteEmployeeModal
-          organisationId={organisationId}
-          roles={roles}
-          venues={venues}
-          onClose={() => setShowInviteEmployee(false)}
-          onSuccess={() => {
-            setShowInviteEmployee(false)
-            loadData()
-          }}
+          venues={venues.map((v) => ({ id: String(v.id), name: String((v as { name?: string }).name ?? v.id) }))}
+          onSuccess={() => loadData()}
         />
       )}
     </div>
   )
+}
+
+const POSITION_OPTIONS = [
+  { value: 'gm', label: 'General Manager', level: 1 },
+  { value: 'agm', label: 'Assistant General Manager', level: 2 },
+  { value: 'shift_leader', label: 'Shift Leader', level: 3 },
+  { value: 'worker', label: 'Worker', level: 4 },
+] as const
+
+const HIERARCHY_LEVEL_INDEX: Record<string, number> = {
+  employer: 0,
+  gm: 1,
+  agm: 2,
+  shift_leader: 3,
+  worker: 4,
 }
 
 function TeamMemberProfileModal({
@@ -346,6 +404,8 @@ function TeamMemberProfileModal({
   organisationId,
   roles: orgRoles,
   venues,
+  currentUserHierarchyLevel,
+  currentUserId,
   onClose,
   onSave,
 }: {
@@ -353,6 +413,8 @@ function TeamMemberProfileModal({
   organisationId: string
   roles: Record<string, unknown>[]
   venues: Record<string, unknown>[]
+  currentUserHierarchyLevel: HierarchyLevel
+  currentUserId: string
   onClose: () => void
   onSave: () => void
 }) {
@@ -364,7 +426,9 @@ function TeamMemberProfileModal({
   const [rating, setRating] = useState<number | null>(null)
   const [primaryVenueId, setPrimaryVenueId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-
+  const [selectedPosition, setSelectedPosition] = useState<string>('worker')
+  const [availablePositions, setAvailablePositions] = useState<typeof POSITION_OPTIONS>([])
+  const [canEditPosition, setCanEditPosition] = useState(true)
   useEffect(() => {
     let cancelled = false
     async function load() {
@@ -385,6 +449,8 @@ function TeamMemberProfileModal({
           setRating(typeof data.rating === 'number' ? data.rating : null)
           const pv = data.primary_venue_id ?? (data.primary_venue as { id?: string } | undefined)?.id
           setPrimaryVenueId(pv ? String(pv) : null)
+          const hl = (data.hierarchy_level as string) || 'worker'
+          setSelectedPosition(['gm', 'agm', 'shift_leader', 'worker'].includes(hl) ? hl : 'worker')
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load member')
@@ -395,6 +461,16 @@ function TeamMemberProfileModal({
     load()
     return () => { cancelled = true }
   }, [member?.id, organisationId])
+
+  useEffect(() => {
+    if (!fullMember) return
+    const currentLevelIndex = HIERARCHY_LEVEL_INDEX[currentUserHierarchyLevel] ?? 4
+    const memberLevel = (fullMember.hierarchy_level as string) || 'worker'
+    const targetLevelIndex = HIERARCHY_LEVEL_INDEX[memberLevel] ?? 4
+    const filtered = POSITION_OPTIONS.filter((opt) => opt.level > currentLevelIndex)
+    setAvailablePositions(filtered)
+    setCanEditPosition(targetLevelIndex > currentLevelIndex)
+  }, [fullMember, currentUserHierarchyLevel])
 
   function toggleRole(roleId: string) {
     setSelectedRoleIds((prev) => {
@@ -416,15 +492,38 @@ function TeamMemberProfileModal({
     }
     setSaving(true)
     setError(null)
+    const previousPosition = (fullMember.hierarchy_level as string) || 'worker'
+    const positionChanged = selectedPosition !== previousPosition
     try {
       await updateTeamMemberProfile(String(fullMember.id), {
         role_ids: selectedRoleIds,
-        rating: settings?.show_ratings !== false ? (rating ?? undefined) : undefined,
         primary_venue_id: primaryVenueId || undefined,
+        hierarchy_level: selectedPosition,
       })
+      if (positionChanged && currentUserId && fullMember.user_id) {
+        const newLabel = POSITION_OPTIONS.find((p) => p.value === selectedPosition)?.label ?? selectedPosition
+        try {
+          const { error: notifErr } = await supabase.from('notifications').insert({
+            user_id: fullMember.user_id,
+            type: 'hierarchy_change',
+            title: 'Position updated',
+            message: `Your position has been changed to ${newLabel}.`,
+            data: {
+              old_position: previousPosition,
+              new_position: selectedPosition,
+              changed_by: currentUserId,
+            },
+          })
+          if (notifErr) console.warn('[Team] Notification insert failed (non-blocking):', notifErr.message, notifErr.code)
+        } catch (_) {
+          // non-blocking: position was still saved
+        }
+      }
       onSave()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save')
+      const message = e instanceof Error ? e.message : 'Failed to save'
+      setError(message)
+      console.error('[Team] updateTeamMemberProfile error:', e)
     } finally {
       setSaving(false)
     }
@@ -436,7 +535,6 @@ function TeamMemberProfileModal({
   const joinDate = fullMember?.joined_at
     ? new Date(String(fullMember.joined_at)).toLocaleDateString()
     : '—'
-  const recentShifts = (fullMember?.recent_shifts as Record<string, unknown>[] | undefined) ?? []
   const primaryVenue = fullMember?.primary_venue as { id?: string; name?: string } | undefined
 
   const roleIdToRole = (id: string) =>
@@ -466,6 +564,29 @@ function TeamMemberProfileModal({
                   <div><span className="text-gray-500">Name:</span> {name}</div>
                   <div><span className="text-gray-500">Email:</span> {email || '—'}</div>
                   <div><span className="text-gray-500">Type:</span> {String(fullMember.member_type ?? '—')}</div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-gray-700">Position</label>
+                    <select
+                      value={selectedPosition}
+                      onChange={(e) => setSelectedPosition(e.target.value)}
+                      disabled={!canEditPosition}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    >
+                      {availablePositions.map((pos) => (
+                        <option key={pos.value} value={pos.value}>
+                          {pos.label}
+                        </option>
+                      ))}
+                      {availablePositions.length === 0 && (
+                        <option value={selectedPosition}>
+                          {POSITION_OPTIONS.find((p) => p.value === selectedPosition)?.label ?? selectedPosition}
+                        </option>
+                      )}
+                    </select>
+                    {!canEditPosition && (
+                      <p className="text-xs text-gray-500">You cannot modify users at your level or above.</p>
+                    )}
+                  </div>
                   <div><span className="text-gray-500">Join date:</span> {joinDate}</div>
                 </div>
               </section>
@@ -504,36 +625,10 @@ function TeamMemberProfileModal({
                 </div>
               </section>
 
-              {/* Performance - only when org has ratings enabled */}
-              {settings?.show_ratings !== false && (
-                <section>
-                  <h3 className="text-sm font-semibold text-gray-700 mb-2">Performance</h3>
-                  <div className="flex items-center gap-1">
-                    {[1, 2, 3, 4, 5].map((value) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setRating((prev) => (prev === value ? null : value))}
-                        className="p-0.5 focus:outline-none"
-                        aria-label={`Rate ${value} stars`}
-                      >
-                        <Star
-                          className="w-8 h-8"
-                          fill={rating !== null && value <= rating ? '#eab308' : 'none'}
-                          stroke={rating !== null && value <= rating ? '#eab308' : '#9ca3af'}
-                          strokeWidth={1.5}
-                        />
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">Current rating: {rating ?? '—'}/5</p>
-                </section>
-              )}
-
-              {/* Assignments */}
+              {/* Assignments (Primary venue) */}
               <section>
                 <h3 className="text-sm font-semibold text-gray-700 mb-2">Assignments</h3>
-                <div className="mb-3">
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Primary venue</label>
                   <select
                     value={primaryVenueId ?? ''}
@@ -547,27 +642,6 @@ function TeamMemberProfileModal({
                       </option>
                     ))}
                   </select>
-                </div>
-                <div>
-                  <span className="block text-sm font-medium text-gray-700 mb-1">Recent shifts (last 5)</span>
-                  {recentShifts.length === 0 ? (
-                    <p className="text-sm text-gray-500">No shifts yet.</p>
-                  ) : (
-                    <ul className="text-sm space-y-1">
-                      {recentShifts.map((allocation: Record<string, unknown>) => {
-                        const shift = allocation.shift as { shift_date?: string; start_time?: string; end_time?: string; venue?: { name?: string }; role?: { name?: string } } | undefined
-                        const venueName = shift?.venue?.name ?? '—'
-                        const roleName = shift?.role?.name ?? '—'
-                        const date = shift?.shift_date ?? '—'
-                        const time = shift?.start_time && shift?.end_time ? `${shift.start_time}–${shift.end_time}` : '—'
-                        return (
-                          <li key={String(allocation.id)} className="text-gray-600">
-                            {date} {time} · {venueName} · {roleName}
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  )}
                 </div>
               </section>
 
