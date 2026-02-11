@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase'
 import type { RotaShift, RotaShiftWithDetails } from '@/lib/types'
 import { publishRosterWeek as publishRosterWeekService } from '@/lib/services/rota-service'
 import { allocateEmployee, removeAllocation, getShiftAllocationForWorker } from '@/lib/services/allocations'
+import { logAction } from '@/lib/services/auditService'
 
 export async function createRotaShift(data: {
   venue_id: string
@@ -26,6 +27,29 @@ export async function createRotaShift(data: {
     .single()
 
   if (error) throw new Error(error.message)
+  const shiftData = shift as RotaShift & { id: string }
+  const { data: venueRow } = await supabase
+    .from('venues')
+    .select('organisation_id')
+    .eq('id', data.venue_id)
+    .single()
+  const orgId = (venueRow as { organisation_id?: string } | null)?.organisation_id
+  if (orgId && shiftData.id) {
+    await logAction({
+      organisationId: orgId,
+      tableName: 'rota_shifts',
+      recordId: shiftData.id,
+      action: 'INSERT',
+      newData: {
+        venue_id: data.venue_id,
+        role_id: data.role_id,
+        shift_date: data.shift_date,
+        start_time: data.start_time,
+        end_time: data.end_time,
+        headcount_needed: data.headcount_needed,
+      },
+    })
+  }
   return shift as RotaShift
 }
 
@@ -49,7 +73,7 @@ export async function getWeeklyRota(params: {
         team_member:team_members(
           id,
           employment_type,
-          profile:profiles(full_name)
+          profile:profiles!team_members_user_id_fkey(full_name)
         )
       ),
       invites:shift_invites(
@@ -57,7 +81,7 @@ export async function getWeeklyRota(params: {
         team_member:team_members(
           id,
           employment_type,
-          profile:profiles(full_name)
+          profile:profiles!team_members_user_id_fkey(full_name)
         )
       )
     `)
@@ -97,7 +121,7 @@ export async function getWeeklyRotaForVenues(params: {
         team_member:team_members(
           id,
           employment_type,
-          profile:profiles(full_name)
+          profile:profiles!team_members_user_id_fkey(full_name)
         )
       ),
       invites:shift_invites(
@@ -105,7 +129,7 @@ export async function getWeeklyRotaForVenues(params: {
         team_member:team_members(
           id,
           employment_type,
-          profile:profiles(full_name)
+          profile:profiles!team_members_user_id_fkey(full_name)
         )
       )
     `)
@@ -147,7 +171,7 @@ export async function getMonthlyRotaForVenues(params: {
         team_member:team_members(
           id,
           employment_type,
-          profile:profiles(full_name)
+          profile:profiles!team_members_user_id_fkey(full_name)
         )
       ),
       invites:shift_invites(
@@ -155,7 +179,7 @@ export async function getMonthlyRotaForVenues(params: {
         team_member:team_members(
           id,
           employment_type,
-          profile:profiles(full_name)
+          profile:profiles!team_members_user_id_fkey(full_name)
         )
       )
     `)
@@ -179,6 +203,20 @@ export async function publishRotaWeek(venue_id: string, week_start: string) {
 }
 
 export async function updateRotaShift(id: string, updates: Partial<RotaShift>) {
+  const { data: existing } = await supabase
+    .from('rota_shifts')
+    .select('venue_id, role_id, shift_date, start_time, end_time, headcount_needed')
+    .eq('id', id)
+    .single()
+  const { data: venueRow } = existing
+    ? await supabase
+        .from('venues')
+        .select('organisation_id')
+        .eq('id', (existing as { venue_id: string }).venue_id)
+        .single()
+    : { data: null }
+  const orgId = (venueRow as { organisation_id?: string } | null)?.organisation_id
+
   const { data, error } = await supabase
     .from('rota_shifts')
     .update({
@@ -190,16 +228,52 @@ export async function updateRotaShift(id: string, updates: Partial<RotaShift>) {
     .single()
 
   if (error) throw new Error(error.message)
+  if (orgId) {
+    await logAction({
+      organisationId: orgId,
+      tableName: 'rota_shifts',
+      recordId: id,
+      action: 'UPDATE',
+      oldData: existing as Record<string, unknown>,
+      newData: updates as Record<string, unknown>,
+    })
+  }
   return data as RotaShift
 }
 
 export async function deleteRotaShift(id: string) {
+  const { data: existing } = await supabase
+    .from('rota_shifts')
+    .select('id, venue_id, role_id, shift_date, start_time, end_time, headcount_needed')
+    .eq('id', id)
+    .single()
+  const { data: venueRow } = existing
+    ? await supabase
+        .from('venues')
+        .select('organisation_id')
+        .eq('id', (existing as { venue_id: string }).venue_id)
+        .single()
+    : { data: null }
+  const orgId = (venueRow as { organisation_id?: string } | null)?.organisation_id
+
   const { error } = await supabase
     .from('rota_shifts')
     .delete()
     .eq('id', id)
 
   if (error) throw new Error(error.message)
+
+  if (orgId) {
+    await logAction({
+      organisationId: orgId,
+      tableName: 'rota_shifts',
+      recordId: id,
+      action: 'DELETE',
+      oldData: existing as Record<string, unknown>,
+      newData: null,
+      metadata: { message: 'Rota shift deleted' },
+    })
+  }
 }
 
 /** Update shift details (role, date, time, headcount). Use updateRotaShift for partial updates. */

@@ -127,10 +127,10 @@ export async function getPendingTimesheets(venueId: string) {
     .from('timekeeping_records')
     .select(`
       *,
-      team_member:team_members(
+      team_member:team_members!timekeeping_records_team_member_id_fkey(
         id,
         employment_type,
-        profile:profiles(full_name, worker_status)
+        profile:profiles!team_members_user_id_fkey(full_name, worker_status)
       ),
       shift:rota_shifts(
         id,
@@ -300,9 +300,9 @@ export async function getPendingManualSubmissions(organisationId: string): Promi
     .from('timekeeping_records')
     .select(`
       *,
-      team_member:team_members(
+      team_member:team_members!timekeeping_records_team_member_id_fkey(
         id,
-        profile:profiles(full_name, email)
+        profile:profiles!team_members_user_id_fkey(full_name, email)
       ),
       shift:rota_shifts(
         id,
@@ -405,7 +405,7 @@ export async function getPendingTimeApprovals(organisationId: string): Promise<R
         submitted_end_time,
         reason,
         manual_entry_status,
-        team_member:team_members(id, profile:profiles(full_name, email)),
+        team_member:team_members!timekeeping_records_team_member_id_fkey(id, profile:profiles!team_members_user_id_fkey(full_name, email)),
         shift:rota_shifts(id, shift_date, start_time, end_time, role:roles(name)),
         venue:venues(id, name)
       )
@@ -470,7 +470,7 @@ export async function getTimekeepingByDateRange(params: {
     .from('timekeeping_records')
     .select(`
       *,
-      team_member:team_members(id, profile:profiles(full_name, email)),
+      team_member:team_members!timekeeping_records_team_member_id_fkey(id, profile:profiles!team_members_user_id_fkey(full_name, email)),
       shift:rota_shifts(shift_date, start_time, end_time, role:roles(name)),
       venue:venues(id, name)
     `)

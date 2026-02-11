@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
+import { createNotification } from '@/app/actions/notification-actions'
 
 /** user_type for newly created profiles when accepting a team invite */
 const INVITE_PROFILE_USER_TYPE = 'employee'
@@ -114,6 +115,21 @@ export async function POST(request: Request) {
         .from('profiles')
         .update({ has_employee_profile: true })
         .eq('id', userId)
+    }
+
+    // 4. If manager, create in-app notification (hierarchy)
+    const organisationId = (teamMember as { organisation_id?: string }).organisation_id
+    if (memberType === 'manager' && organisationId) {
+      await createNotification({
+        organisationId,
+        actorId: null,
+        recipientId: userId,
+        category: 'hierarchy',
+        eventType: 'manager_invite_received',
+        title: 'Welcome as manager',
+        body: 'You have accepted the manager invite. You can now access the dashboard.',
+        priority: 'normal',
+      })
     }
 
     return NextResponse.json({ teamMember })

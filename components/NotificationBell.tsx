@@ -16,15 +16,10 @@ import {
   type ShiftNotificationRow,
 } from '@/lib/services/notifications'
 
-/** Dashboard path for the current app context (worker vs employee). */
-const DASHBOARD_LINKS = [
-  { path: '/worker/dashboard', label: 'Worker dashboard' },
-  { path: '/employee/dashboard', label: 'Employee dashboard' },
-]
-
 export default function NotificationBell() {
   const pathname = usePathname()
   const isEmployer = pathname?.startsWith('/dashboard')
+  const dashboardHref = isEmployer ? '/dashboard' : pathname?.startsWith('/employee') ? '/employee/dashboard' : '/worker/dashboard'
   const [inviteCount, setInviteCount] = useState(0)
   const [notificationCount, setNotificationCount] = useState(0)
   const [shiftNotificationCount, setShiftNotificationCount] = useState(0)
@@ -32,9 +27,19 @@ export default function NotificationBell() {
   const [shiftNotifications, setShiftNotifications] = useState<ShiftNotificationRow[]>([])
   const [open, setOpen] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   const totalCount = inviteCount + notificationCount + shiftNotificationCount
+
+  function clearOnError() {
+    setInviteCount(0)
+    setNotificationCount(0)
+    setShiftNotificationCount(0)
+    setNotifications([])
+    setShiftNotifications([])
+    setLoadError(true)
+  }
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -48,11 +53,12 @@ export default function NotificationBell() {
 
   function refresh() {
     if (!userId) return
-    getPendingInvitesCount(userId).then(setInviteCount)
-    getUnreadNotificationCount(userId).then(setNotificationCount)
-    getUnreadShiftNotificationCount(userId).then(setShiftNotificationCount)
-    getRecentNotifications(userId, 5).then(setNotifications)
-    getShiftNotifications(userId, 10).then(setShiftNotifications)
+    setLoadError(false)
+    getPendingInvitesCount(userId).then(setInviteCount).catch(clearOnError)
+    getUnreadNotificationCount(userId).then(setNotificationCount).catch(() => setNotificationCount(0))
+    getUnreadShiftNotificationCount(userId).then(setShiftNotificationCount).catch(() => setShiftNotificationCount(0))
+    getRecentNotifications(userId, 5).then(setNotifications).catch(() => setNotifications([]))
+    getShiftNotifications(userId, 10).then(setShiftNotifications).catch(() => setShiftNotifications([]))
   }
 
   useEffect(() => {
@@ -62,14 +68,16 @@ export default function NotificationBell() {
       setShiftNotificationCount(0)
       setNotifications([])
       setShiftNotifications([])
+      setLoadError(false)
       return
     }
     let cancelled = false
-    getPendingInvitesCount(userId).then((n) => { if (!cancelled) setInviteCount(n) })
-    getUnreadNotificationCount(userId).then((n) => { if (!cancelled) setNotificationCount(n) })
-    getUnreadShiftNotificationCount(userId).then((n) => { if (!cancelled) setShiftNotificationCount(n) })
-    getRecentNotifications(userId, 5).then((list) => { if (!cancelled) setNotifications(list) })
-    getShiftNotifications(userId, 10).then((list) => { if (!cancelled) setShiftNotifications(list) })
+    setLoadError(false)
+    getPendingInvitesCount(userId).then((n) => { if (!cancelled) setInviteCount(n) }).catch(() => { if (!cancelled) clearOnError() })
+    getUnreadNotificationCount(userId).then((n) => { if (!cancelled) setNotificationCount(n) }).catch(() => { if (!cancelled) setNotificationCount(0) })
+    getUnreadShiftNotificationCount(userId).then((n) => { if (!cancelled) setShiftNotificationCount(n) }).catch(() => { if (!cancelled) setShiftNotificationCount(0) })
+    getRecentNotifications(userId, 5).then((list) => { if (!cancelled) setNotifications(list) }).catch(() => { if (!cancelled) setNotifications([]) })
+    getShiftNotifications(userId, 10).then((list) => { if (!cancelled) setShiftNotifications(list) }).catch(() => { if (!cancelled) setShiftNotifications([]) })
     return () => { cancelled = true }
   }, [userId])
 
@@ -147,18 +155,17 @@ export default function NotificationBell() {
               {inviteCount > 0 && (
                 <>
                   <div className="px-3 py-2 text-sm font-medium text-gray-700 border-b border-gray-100">
-                    {inviteCount} pending shift invite{inviteCount !== 1 ? 's' : ''}
+                    {inviteCount} pending invite{inviteCount !== 1 ? 's' : ''}
                   </div>
-                  {DASHBOARD_LINKS.map(({ path, label }) => (
+                  {isEmployer && (
                     <Link
-                      key={path}
-                      href={path}
+                      href="/dashboard/team/invites"
                       onClick={() => setOpen(false)}
                       className="block px-3 py-2 text-sm text-blue-600 hover:bg-blue-50"
                     >
-                      {label}
+                      View invites
                     </Link>
-                  ))}
+                  )}
                 </>
               )}
               {notificationCount > 0 && (
@@ -211,11 +218,11 @@ export default function NotificationBell() {
             </>
           ) : (
             <div className="px-3 py-4 text-sm text-gray-500 text-center">
-              No pending invitations or notifications
+              {loadError ? 'Couldn\'t load notifications. Check your connection.' : 'No pending invitations or notifications'}
             </div>
           )}
           <Link
-            href="/dashboard"
+            href={dashboardHref}
             onClick={() => setOpen(false)}
             className="block px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 border-t border-gray-100 font-medium mt-1"
           >

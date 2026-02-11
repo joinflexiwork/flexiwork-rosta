@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Building2, MapPin, CreditCard, Plus, X } from 'lucide-react'
+import Link from 'next/link'
+import { Building2, MapPin, CreditCard, Plus, X, Bell } from 'lucide-react'
 import { getOrganisationIdForCurrentUser, getMyOrganisations, updateOrganisation } from '@/lib/services/organisations'
 import { getVenuesByOrg, createVenue } from '@/lib/services/venues'
 import type { Venue } from '@/lib/types'
@@ -176,6 +177,17 @@ export default function SettingsPage() {
               </button>
             </div>
           </form>
+        </div>
+
+        {/* Notification settings */}
+        <div className="mb-6">
+          <Link
+            href="/dashboard/settings/notifications"
+            className="flex items-center gap-2 text-indigo-600 hover:text-indigo-800 font-medium"
+          >
+            <Bell className="w-5 h-5" />
+            Notification settings
+          </Link>
         </div>
 
         {/* Venues */}

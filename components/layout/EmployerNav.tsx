@@ -11,8 +11,10 @@ const TABS = [
   { href: '/dashboard/rota', label: 'Create Roster' },
   { href: '/dashboard/roster/view', label: 'View Roster' },
   { href: '/dashboard/team', label: 'Team' },
-  { href: '/dashboard/workers', label: 'Worker Profile' },
   { href: '/dashboard/timekeeping', label: 'Timekeeping' },
+  { href: '/dashboard/audit', label: 'Audit Log' },
+  { href: '/dashboard/profile', label: 'My Profile' },
+  { href: '/dashboard/admin/data-integrity', label: 'Data Integrity' },
 ] as const
 
 export default function EmployerNav() {

@@ -9,6 +9,9 @@ export interface Organisation {
   business_reg_number?: string
   industry?: string
   billing_email?: string
+  tax_id?: string
+  company_address?: string
+  company_logo_url?: string
   created_at: string
   updated_at: string
 }

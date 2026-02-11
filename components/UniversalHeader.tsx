@@ -14,7 +14,7 @@ type Props = {
 /** Fixed header: back button (top-left), centered logo, optional right slot. No back button on login. */
 export default function UniversalHeader({ backFallbackHref, rightSlot }: Props) {
   const pathname = usePathname()
-  const isLoginPage = pathname === '/login'
+  const isLoginPage = pathname === '/login' || pathname === '/auth/login' || pathname === '/auth/register'
 
   return (
     <div className="fixed top-0 left-0 right-0 z-50 h-20 pointer-events-none">

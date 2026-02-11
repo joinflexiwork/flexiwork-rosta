@@ -1,9 +1,13 @@
 'use client'
 
+import { useState } from 'react'
 import { X, Star, Mail, User } from 'lucide-react'
+import { ContactWorkerModal } from '@/app/dashboard/components/contact-worker-modal'
 
 export type WorkerProfileData = {
   id: string
+  /** Worker's auth user id (profiles.id) – for notifications / contact */
+  user_id?: string | null
   profile?: { full_name?: string; email?: string } | null
   employment_type?: string
   roles?: { role?: { name?: string } }[]
@@ -12,10 +16,16 @@ export type WorkerProfileData = {
 export default function WorkerProfileModal({
   worker,
   onClose,
+  senderId = '',
+  senderName = '',
 }: {
   worker: WorkerProfileData | null
   onClose: () => void
+  senderId?: string
+  senderName?: string
 }) {
+  const [isContactModalOpen, setIsContactModalOpen] = useState(false)
+
   if (!worker) return null
 
   const profile = worker.profile
@@ -83,13 +93,14 @@ export default function WorkerProfileModal({
         </div>
         <div className="p-6 border-t border-gray-200 flex gap-3">
           {email && (
-            <a
-              href={`mailto:${email}`}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg font-medium hover:opacity-90"
+            <button
+              type="button"
+              onClick={() => setIsContactModalOpen(true)}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-medium hover:opacity-90"
             >
               <Mail className="w-4 h-4" />
               Contact worker
-            </a>
+            </button>
           )}
           <button
             type="button"
@@ -100,6 +111,16 @@ export default function WorkerProfileModal({
           </button>
         </div>
       </div>
+
+      <ContactWorkerModal
+        isOpen={isContactModalOpen}
+        onClose={() => setIsContactModalOpen(false)}
+        workerUserId={worker.user_id ?? null}
+        workerName={fullName}
+        workerEmail={email}
+        senderId={senderId}
+        senderName={senderName}
+      />
     </div>
   )
 }

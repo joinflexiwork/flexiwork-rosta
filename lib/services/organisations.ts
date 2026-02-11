@@ -38,7 +38,13 @@ export async function getMyOrganisations(): Promise<Organisation[]> {
     .order('created_at', { ascending: false })
 
   if (ownedError) {
-    console.error('[getMyOrganisations] organisations query error:', ownedError.message, 'code:', ownedError.code, 'details:', ownedError.details)
+    console.warn('[getMyOrganisations] organisations query error:', ownedError.message, 'code:', ownedError.code)
+    if (ownedError.code === '42P17' || (ownedError.message && ownedError.message.includes('recursion'))) {
+      const { data: rpcOrgs, error: rpcError } = await supabase.rpc('get_my_organisations_rpc')
+      if (!rpcError && rpcOrgs && Array.isArray(rpcOrgs) && rpcOrgs.length > 0) {
+        return rpcOrgs as Organisation[]
+      }
+    }
     throw new Error(ownedError.message)
   }
 
@@ -95,16 +101,29 @@ export async function getMyOrganisations(): Promise<Organisation[]> {
   }
 }
 
-/** Returns the organisation id the current user can access (as owner or manager). */
+/** Returns the organisation id the current user can access (as owner or manager). Prefers the org that has team members when user owns multiple. */
 export async function getOrganisationIdForCurrentUser(): Promise<string | null> {
   try {
     const orgs = await getMyOrganisations()
-    const id = orgs[0]?.id ?? null
-    if (!id) {
-      console.warn('[getOrganisationIdForCurrentUser] no org found, orgs length:', orgs?.length ?? 0, '— redirect to setup may follow')
-    } else {
-      console.info('[getOrganisationIdForCurrentUser] org id:', id)
+    if (!orgs?.length) {
+      console.warn('[getOrganisationIdForCurrentUser] no org found')
+      return null
     }
+    if (orgs.length === 1) {
+      const id = orgs[0].id
+      console.info('[getOrganisationIdForCurrentUser] single org:', id)
+      return id
+    }
+    // Multiple orgs: prefer the one that has at least one team member
+    const orgIds = orgs.map((o) => o.id)
+    const { data: members } = await supabase
+      .from('team_members')
+      .select('organisation_id')
+      .in('organisation_id', orgIds)
+      .limit(100)
+    const orgIdWithMembers = members?.[0]?.organisation_id as string | undefined
+    const id = orgIdWithMembers ?? orgs[0].id
+    console.info('[getOrganisationIdForCurrentUser] multi org, preferred (has members):', orgIdWithMembers ?? 'none', '-> returning:', id)
     return id
   } catch (e) {
     console.error('[getOrganisationIdForCurrentUser]', e instanceof Error ? e.message : e)
@@ -134,4 +153,34 @@ export async function updateOrganisation(id: string, updates: Partial<Organisati
 
   if (error) throw new Error(error.message)
   return data as Organisation
+}
+
+const ORG_LOGO_BUCKET = 'organisation-logos'
+const MAX_LOGO_SIZE = 2 * 1024 * 1024
+const ALLOWED_LOGO_TYPES = ['image/jpeg', 'image/png']
+
+/** Upload organisation logo and update organisations.company_logo_url. Requires bucket "organisation-logos" to exist. */
+export async function uploadOrganisationLogo(organisationId: string, file: File): Promise<string> {
+  if (file.size > MAX_LOGO_SIZE) throw new Error('File must be 2MB or smaller')
+  if (!ALLOWED_LOGO_TYPES.includes(file.type)) throw new Error('Only JPEG and PNG are allowed')
+
+  const ext = file.type === 'image/png' ? 'png' : 'jpg'
+  const path = `orgs/${organisationId}.${ext}`
+
+  const { error: uploadError } = await supabase.storage.from(ORG_LOGO_BUCKET).upload(path, file, {
+    upsert: true,
+    contentType: file.type,
+  })
+  if (uploadError) throw new Error(uploadError.message)
+
+  const { data: urlData } = supabase.storage.from(ORG_LOGO_BUCKET).getPublicUrl(path)
+  const publicUrl = urlData?.publicUrl ?? ''
+
+  const { error: updateError } = await supabase
+    .from('organisations')
+    .update({ company_logo_url: publicUrl })
+    .eq('id', organisationId)
+  if (updateError) throw new Error(updateError.message)
+
+  return publicUrl
 }

@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type { ShiftAllocation } from '@/lib/types'
+import { logAction } from '@/lib/services/auditService'
 
 /** RPC row shape from get_worker_shifts / get_worker_shift_details */
 export type WorkerShiftRpcRow = {
@@ -80,16 +81,80 @@ export async function allocateEmployee(data: {
     .single()
 
   if (error) throw new Error(error.message)
+  const alloc = allocation as ShiftAllocation & { id: string }
+  const { data: shiftRow } = await supabase
+    .from('rota_shifts')
+    .select('venue_id')
+    .eq('id', data.rota_shift_id)
+    .single()
+  const venueId = (shiftRow as { venue_id?: string } | null)?.venue_id
+  if (venueId) {
+    const { data: venueRow } = await supabase
+      .from('venues')
+      .select('organisation_id')
+      .eq('id', venueId)
+      .single()
+    const orgId = (venueRow as { organisation_id?: string } | null)?.organisation_id
+    if (orgId) {
+      await logAction({
+        organisationId: orgId,
+        tableName: 'shift_allocations',
+        recordId: alloc.id,
+        action: 'SHIFT_ASSIGNED',
+        newData: {
+          rota_shift_id: data.rota_shift_id,
+          team_member_id: data.team_member_id,
+        },
+      })
+    }
+  }
   return allocation as ShiftAllocation
 }
 
 export async function removeAllocation(id: string) {
+  const { data: allocation } = await supabase
+    .from('shift_allocations')
+    .select('id, rota_shift_id, team_member_id')
+    .eq('id', id)
+    .single()
+  const orgId = allocation
+    ? await getOrganisationIdForRotaShift((allocation as { rota_shift_id: string }).rota_shift_id)
+    : null
+
   const { error } = await supabase
     .from('shift_allocations')
     .delete()
     .eq('id', id)
 
   if (error) throw new Error(error.message)
+
+  if (orgId) {
+    await logAction({
+      organisationId: orgId,
+      tableName: 'shift_allocations',
+      recordId: id,
+      action: 'DELETE',
+      oldData: allocation as Record<string, unknown>,
+      newData: null,
+      metadata: { message: 'Shift allocation removed' },
+    })
+  }
+}
+
+async function getOrganisationIdForRotaShift(rotaShiftId: string): Promise<string | null> {
+  const { data: shift } = await supabase
+    .from('rota_shifts')
+    .select('venue_id')
+    .eq('id', rotaShiftId)
+    .single()
+  const venueId = (shift as { venue_id?: string } | null)?.venue_id
+  if (!venueId) return null
+  const { data: venue } = await supabase
+    .from('venues')
+    .select('organisation_id')
+    .eq('id', venueId)
+    .single()
+  return (venue as { organisation_id?: string } | null)?.organisation_id ?? null
 }
 
 /** Get allocation id for a shift + worker (for replace/unallocate). */
