@@ -8,6 +8,7 @@
 [build.environment]
   NODE_VERSION = "20.9.0"
   NEXT_TELEMETRY_DISABLED = "1"
+  NPM_CONFIG_PRODUCTION = "false"
 
 # Essential Next.js plugin: enables serverless functions for SSR/API and correct routing.
 # Without this, Netlify may serve the wrong output and all routes can 404.
