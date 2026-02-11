@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { email, fullName, orgId, orgName, inviterName, role, venueIds, role_ids, primary_venue_id, employment_type } = body as {
+    const { email, fullName, orgId, orgName, inviterName, role, venueIds, role_ids, primary_venue_id, employment_type, hierarchy_level, venue_scope, invited_by } = body as {
       email: string
       fullName: string
       orgId: string
@@ -83,6 +83,9 @@ export async function POST(request: Request) {
       role_ids?: string[]
       primary_venue_id?: string
       employment_type?: 'full_time' | 'part_time'
+      hierarchy_level?: 'employer' | 'gm' | 'agm' | 'shift_leader' | 'worker'
+      venue_scope?: string[]
+      invited_by?: string
     }
 
     if (!email?.trim() || !orgId) {
@@ -117,19 +120,24 @@ export async function POST(request: Request) {
     const employment = employment_type ?? (memberType === 'manager' ? 'full_time' : 'part_time')
     const primaryVenue = primary_venue_id ?? (venueIds?.length ? venueIds[0] : null)
 
+    const insertPayload: Record<string, unknown> = {
+      organisation_id: orgId,
+      user_id: null,
+      member_type: memberType,
+      employment_type: employment,
+      status: 'pending',
+      primary_venue_id: primaryVenue || null,
+      invite_code: inviteCode,
+      email: email?.trim() || null,
+      full_name: fullName?.trim() || null,
+    }
+    if (hierarchy_level) insertPayload.hierarchy_level = hierarchy_level
+    if (venue_scope?.length) insertPayload.venue_scope = venue_scope
+    if (invited_by) insertPayload.invited_by = invited_by
+
     const { data: teamMember, error: dbError } = await supabaseAdmin
       .from('team_members')
-      .insert({
-        organisation_id: orgId,
-        user_id: null,
-        member_type: memberType,
-        employment_type: employment,
-        status: 'pending',
-        primary_venue_id: primaryVenue || null,
-        invite_code: inviteCode,
-        email: email?.trim() || null,
-        full_name: fullName?.trim() || null,
-      })
+      .insert(insertPayload)
       .select()
       .single()
 

@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type { TeamMember } from '@/lib/types'
+import { logAction } from '@/lib/services/auditService'
 
 export async function inviteEmployee(data: {
   organisation_id: string
@@ -87,7 +88,7 @@ export async function getTeamMembers(organisationId: string) {
     .from('team_members')
     .select(`
       *,
-      profile:profiles(full_name, email, worker_status),
+      profile:profiles!team_members_user_id_fkey(full_name, email, worker_status),
       roles:team_member_roles(
         role:roles(*)
       ),
@@ -115,13 +116,13 @@ export async function getMyTeamMemberWithRoles(userId: string): Promise<Record<s
   return getTeamMemberWithRoles((row as { id: string }).id)
 }
 
-/** Get a single team member with roles, profile, primary_venue, assigned venues and recent shifts (last 5 allocations). */
+/** Get a single team member with roles, profile, primary_venue and assigned venues. (Shifts are shown in "Who is Working" via getShiftsForWIW.) */
 export async function getTeamMemberWithRoles(memberId: string): Promise<Record<string, unknown> | null> {
   const { data: member, error: memberErr } = await supabase
     .from('team_members')
     .select(`
       *,
-      profile:profiles(full_name, email, worker_status),
+      profile:profiles!team_members_user_id_fkey(full_name, email, avatar_url, worker_status),
       roles:team_member_roles(
         id,
         role_id,
@@ -138,32 +139,10 @@ export async function getTeamMemberWithRoles(memberId: string): Promise<Record<s
 
   if (memberErr || !member) return null
 
-  const { data: recentAllocations } = await supabase
-    .from('shift_allocations')
-    .select(`
-      id,
-      rota_shift_id,
-      status,
-      shift:rota_shifts(
-        id,
-        shift_date,
-        start_time,
-        end_time,
-        venue:venues(id, name),
-        role:roles(id, name)
-      )
-    `)
-    .eq('team_member_id', memberId)
-    .order('allocated_at', { ascending: false })
-    .limit(5)
-
-  return {
-    ...member,
-    recent_shifts: recentAllocations ?? [],
-  } as Record<string, unknown>
+  return member as Record<string, unknown>
 }
 
-/** Update team member profile: full_name (team_members for pending), primary_venue_id, rating, status, role_ids, venue_ids. */
+/** Update team member profile: full_name (team_members for pending), primary_venue_id, rating, status, role_ids, venue_ids, hierarchy_level. */
 export async function updateTeamMemberProfile(
   memberId: string,
   data: {
@@ -173,24 +152,50 @@ export async function updateTeamMemberProfile(
     status?: string
     role_ids?: string[]
     venue_ids?: string[]
+    hierarchy_level?: string | null
   }
 ): Promise<void> {
+  const { data: existing } = await supabase
+    .from('team_members')
+    .select('organisation_id, hierarchy_level, status, full_name')
+    .eq('id', memberId)
+    .single()
+  const orgId = (existing as { organisation_id?: string } | null)?.organisation_id
+  const oldLevel = (existing as { hierarchy_level?: string } | null)?.hierarchy_level
+  const oldStatus = (existing as { status?: string } | null)?.status
+  const oldFullName = (existing as { full_name?: string } | null)?.full_name
+
+  const VALID_HIERARCHY_LEVELS = ['employer', 'gm', 'agm', 'shift_leader', 'worker'] as const
   const updates: Record<string, unknown> = {}
   if (data.full_name !== undefined) updates.full_name = data.full_name?.trim() || null
-  if (data.primary_venue_id !== undefined) updates.primary_venue_id = data.primary_venue_id
-  if (data.rating !== undefined) updates.rating = data.rating
+  if (data.primary_venue_id !== undefined) updates.primary_venue_id = data.primary_venue_id ?? null
+  if (data.rating !== undefined) updates.rating = data.rating ?? null
   if (data.status !== undefined) updates.status = data.status
+  if (data.hierarchy_level !== undefined && data.hierarchy_level !== null) {
+    const level = String(data.hierarchy_level).toLowerCase()
+    if (VALID_HIERARCHY_LEVELS.includes(level)) {
+      updates.hierarchy_level = level
+    }
+  }
 
   if (Object.keys(updates).length > 0) {
     const { error: updateErr } = await supabase
       .from('team_members')
       .update(updates)
       .eq('id', memberId)
-    if (updateErr) throw new Error(updateErr.message)
+    if (updateErr) {
+      const msg = `Team member update failed: ${updateErr.message}${updateErr.code ? ` (code: ${updateErr.code})` : ''}${updateErr.details ? ` [${updateErr.details}]` : ''}`
+      console.error('[updateTeamMemberProfile] team_members update:', updateErr)
+      throw new Error(msg)
+    }
   }
 
   if (data.role_ids !== undefined) {
-    await supabase.from('team_member_roles').delete().eq('team_member_id', memberId)
+    const { error: deleteErr } = await supabase.from('team_member_roles').delete().eq('team_member_id', memberId)
+    if (deleteErr) {
+      console.error('[updateTeamMemberProfile] team_member_roles delete:', deleteErr)
+      throw new Error(`Failed to clear roles: ${deleteErr.message}`)
+    }
     if (data.role_ids.length > 0) {
       const rows = data.role_ids.map((role_id, idx) => ({
         team_member_id: memberId,
@@ -198,7 +203,11 @@ export async function updateTeamMemberProfile(
         is_primary: idx === 0,
       }))
       const { error: insertErr } = await supabase.from('team_member_roles').insert(rows)
-      if (insertErr) throw new Error(insertErr.message)
+      if (insertErr) {
+        const msg = `Failed to save roles: ${insertErr.message}${insertErr.code ? ` (code: ${insertErr.code})` : ''}${insertErr.details ? ` [${insertErr.details}]` : ''}`
+        console.error('[updateTeamMemberProfile] team_member_roles insert:', insertErr)
+        throw new Error(msg)
+      }
     }
   }
 
@@ -215,13 +224,42 @@ export async function updateTeamMemberProfile(
       if (insertErr) throw new Error(insertErr.message)
     }
   }
+
+  if (orgId) {
+    const hasChanges =
+      data.hierarchy_level !== undefined ||
+      data.role_ids !== undefined ||
+      data.venue_ids !== undefined ||
+      data.status !== undefined ||
+      data.full_name !== undefined
+    if (hasChanges) {
+      await logAction({
+        organisationId: orgId,
+        tableName: 'team_members',
+        recordId: memberId,
+        action: 'UPDATE',
+        oldData: {
+          hierarchy_level: oldLevel,
+          status: oldStatus,
+          full_name: oldFullName,
+        },
+        newData: {
+          hierarchy_level: data.hierarchy_level ?? oldLevel,
+          status: data.status ?? oldStatus,
+          full_name: data.full_name !== undefined ? data.full_name : oldFullName,
+          role_ids: data.role_ids,
+          venue_ids: data.venue_ids,
+        },
+      })
+    }
+  }
 }
 
 /** Delete a team member. Fails if active and has assigned shifts. Pending members can be deleted (cancels invite). */
 export async function deleteTeamMember(memberId: string): Promise<void> {
   const { data: member, error: fetchErr } = await supabase
     .from('team_members')
-    .select('id, status, organisation_id')
+    .select('id, status, organisation_id, profile:profiles!team_members_user_id_fkey(full_name)')
     .eq('id', memberId)
     .single()
 
@@ -239,12 +277,28 @@ export async function deleteTeamMember(memberId: string): Promise<void> {
     }
   }
 
+  const orgId = (member as { organisation_id?: string }).organisation_id
+  const profile = (member as { profile?: { full_name?: string | null } }).profile
+  const displayName = profile?.full_name?.trim() || null
+
   const { error: deleteErr } = await supabase
     .from('team_members')
     .delete()
     .eq('id', memberId)
 
   if (deleteErr) throw new Error(deleteErr.message)
+
+  if (orgId) {
+    await logAction({
+      organisationId: orgId,
+      tableName: 'team_members',
+      recordId: memberId,
+      action: 'DELETE',
+      oldData: { status: (member as { status: string }).status },
+      newData: null,
+      metadata: { message: displayName ? `Team member deleted: ${displayName}` : 'Team member deleted' },
+    })
+  }
 }
 
 export async function acceptInvite(inviteCode: string, userId: string) {

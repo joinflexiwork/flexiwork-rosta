@@ -15,12 +15,16 @@ import {
   X,
   Pencil,
   Trash2,
+  ChevronUp,
 } from 'lucide-react'
 import WorkerProfileModal, { type WorkerProfileData } from '@/components/WorkerProfileModal'
+import { CollapsibleSection } from '@/components/ui/CollapsibleSection'
 import { getOrganisationIdForCurrentUser, getMyOrganisations, hasTeamMembership } from '@/lib/services/organisations'
 import { getVenuesByOrg } from '@/lib/services/venues'
 import { getRolesByOrg, createRole, updateRole, deleteRole } from '@/lib/services/roles'
 import { getTeamMembers } from '@/lib/services/team'
+import { getOrganisationSettings } from '@/lib/services/settings'
+import { getPendingApplicationsCount } from '@/lib/services/applications'
 import { supabase } from '@/lib/supabase'
 
 type AllocationRow = {
@@ -46,6 +50,15 @@ type ShiftRow = {
   invites?: { id: string; status: string }[]
 }
 
+const HIERARCHY_LABELS: Record<string, string> = {
+  employer: 'Employer',
+  gm: 'General Manager',
+  agm: 'Assistant GM',
+  shift_leader: 'Shift Leader',
+  supervisor: 'Supervisor',
+  worker: 'Worker',
+}
+
 export default function DashboardPage() {
   const router = useRouter()
   const [stats, setStats] = useState({
@@ -54,9 +67,13 @@ export default function DashboardPage() {
     shiftsFilled: 0,
     shiftsTotal: 0,
     pendingTimesheets: 0,
+    pendingApplications: 0,
     openShifts: 0,
   })
+  const [orgSettings, setOrgSettings] = useState<{ show_gig_features?: boolean }>({})
   const [userName, setUserName] = useState<string>('')
+  const [currentUserId, setCurrentUserId] = useState<string>('')
+  const [userHierarchyLevel, setUserHierarchyLevel] = useState<string>('')
   const [orgName, setOrgName] = useState<string>('')
   const [shiftList, setShiftList] = useState<ShiftRow[]>([])
   const [teamMembers, setTeamMembers] = useState<Record<string, unknown>[]>([])
@@ -68,6 +85,8 @@ export default function DashboardPage() {
   const [showAddRoleModal, setShowAddRoleModal] = useState(false)
   const [editingRole, setEditingRole] = useState<Record<string, unknown> | null>(null)
   const [roleToDelete, setRoleToDelete] = useState<Record<string, unknown> | null>(null)
+  const [isShiftsOpen, setIsShiftsOpen] = useState(false)
+  const [isRolesOpen, setIsRolesOpen] = useState(false)
 
   useEffect(() => {
     async function checkThenLoad() {
@@ -111,12 +130,25 @@ export default function DashboardPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('full_name')
-          .eq('id', user.id)
-          .single()
-        setUserName((profile?.full_name as string) || user.email || 'there')
+        setCurrentUserId(user.id)
+        const [profileRes, teamMemberRes] = await Promise.all([
+          supabase.from('profiles').select('full_name').eq('id', user.id).single(),
+          supabase.from('team_members').select('hierarchy_level').eq('user_id', user.id).eq('organisation_id', orgId).maybeSingle(),
+        ])
+        const profile = profileRes.data as { full_name?: string } | null
+        const teamMember = teamMemberRes.data as { hierarchy_level?: string } | null
+        const fullName = (profile?.full_name as string)?.trim()
+        const displayName = fullName
+          ? fullName.split(/\s+/)[0] || fullName
+          : (user.email ? user.email.split('@')[0] : '') || 'User'
+        setUserName(displayName)
+        if (teamMember?.hierarchy_level) {
+          setUserHierarchyLevel(teamMember.hierarchy_level)
+        } else {
+          const { data: org } = await supabase.from('organisations').select('owner_id').eq('id', orgId).single()
+          const ownerId = (org as { owner_id?: string } | null)?.owner_id
+          setUserHierarchyLevel(ownerId === user.id ? 'employer' : 'worker')
+        }
       }
 
       const orgs = await getMyOrganisations().catch(() => [])
@@ -140,11 +172,14 @@ export default function DashboardPage() {
       const weekStartStr = toLocalDateStr(monday)
       const weekEndStr = toLocalDateStr(sunday)
 
-      const [venueIds, rolesData] = await Promise.all([
+      const [venueIds, rolesData, settings, pendingAppsCount] = await Promise.all([
         getVenuesByOrg(orgId).catch(() => [] as { id: string }[]),
         getRolesByOrg(orgId).catch(() => []),
+        getOrganisationSettings(orgId).catch(() => ({ show_ratings: true, show_gig_features: false })),
+        getPendingApplicationsCount(orgId).catch(() => 0),
       ])
       setRoles((rolesData as unknown) as Record<string, unknown>[])
+      setOrgSettings({ show_gig_features: settings.show_gig_features })
       const venueIdList = venueIds.map((v) => v.id)
 
       const { count: employeeCount, error: empErr } = await supabase
@@ -170,7 +205,7 @@ export default function DashboardPage() {
           headcount_needed,
           venue:venues(id, name),
           role:roles(id, name),
-          allocations:shift_allocations(id, team_member_id, team_member:team_members(id, profile:profiles(full_name, email))),
+          allocations:shift_allocations(id, team_member_id, team_member:team_members(id, profile:profiles!team_members_user_id_fkey(full_name, email))),
           invites:shift_invites(id, status)
         `)
         .eq('status', 'published')
@@ -201,11 +236,15 @@ export default function DashboardPage() {
         return onlyPendingOrRejected
       }).length
 
-      const { count: pendingCount } = await supabase
-        .from('timekeeping_records')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'pending')
-        .not('clock_out', 'is', null)
+      const { count: pendingCount } =
+        venueIdList.length > 0
+          ? await supabase
+              .from('timekeeping_records')
+              .select('*', { count: 'exact', head: true })
+              .eq('status', 'pending')
+              .not('clock_out', 'is', null)
+              .in('venue_id', venueIdList)
+          : { count: 0 }
 
       const members = await getTeamMembers(orgId).catch(() => [])
       setTeamMembers(members as Record<string, unknown>[])
@@ -216,6 +255,7 @@ export default function DashboardPage() {
         shiftsFilled: filledShifts,
         shiftsTotal: totalShifts,
         pendingTimesheets: pendingCount ?? 0,
+        pendingApplications: pendingAppsCount,
         openShifts,
       })
     } catch (err) {
@@ -242,6 +282,11 @@ export default function DashboardPage() {
         <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl p-8 text-white shadow-md">
           <h1 className="text-2xl font-bold mb-1">
             Good morning, {userName || 'there'}
+            {userHierarchyLevel && (
+              <span className="text-purple-200 font-normal ml-1">
+                ({HIERARCHY_LABELS[userHierarchyLevel] ?? userHierarchyLevel})
+              </span>
+            )}
           </h1>
           <p className="text-blue-100 text-sm">
             Your organisation dashboard · {orgName}
@@ -255,8 +300,8 @@ export default function DashboardPage() {
             iconBg="bg-blue-100"
             iconColor="text-blue-600"
             label="Total Workers"
-            value={stats.totalEmployees + stats.gigWorkers}
-            subtitle={`${stats.totalEmployees} Employees · ${stats.gigWorkers} Gig Workers`}
+            value={orgSettings?.show_gig_features ? stats.totalEmployees + stats.gigWorkers : stats.totalEmployees}
+            subtitle={orgSettings?.show_gig_features ? `${stats.totalEmployees} Employees · ${stats.gigWorkers} Gig Workers` : `${stats.totalEmployees} Employees`}
             trend="+12%"
             trendUp
           />
@@ -292,138 +337,175 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* Two columns: Upcoming Shifts (70%) | Quick Actions (30%) */}
-        <div className="grid grid-cols-1 lg:grid-cols-10 gap-6">
-          <div className="lg:col-span-7">
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-                <h2 className="text-lg font-bold text-gray-900">Upcoming Shifts</h2>
-                <Link
-                  href="/dashboard/rota"
-                  className="text-sm font-medium text-purple-600 hover:text-purple-700"
-                >
-                  View All
-                </Link>
-              </div>
-              <div className="divide-y divide-gray-100">
-                {shiftList.length === 0 ? (
-                  <div className="p-8 text-center text-gray-500 text-sm">
-                    No upcoming shifts this week. Create a roster to get started.
-                  </div>
-                ) : (
-                  shiftList.map((shift) => (
-                    <UpcomingShiftCard
-                      key={shift.id}
-                      shift={shift}
-                      teamMembers={teamMembers}
-                      onViewWorker={(w) => setWorkerProfileModal(w)}
-                    />
-                  ))
-                )}
-              </div>
+        {/* Upcoming Shifts and Manage Organization Roles: same width, roles below shifts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <CollapsibleSection
+            title="Upcoming Shifts"
+            open={isShiftsOpen}
+            onOpenChange={setIsShiftsOpen}
+            defaultOpen={false}
+            compactHeader
+            actionButton={
+              <Link
+                href="/dashboard/rota"
+                className="text-sm font-medium text-purple-600 hover:text-purple-700"
+              >
+                View All
+              </Link>
+            }
+          >
+            <div className="divide-y divide-gray-100">
+              {shiftList.length === 0 ? (
+                <div className="p-8 text-center text-gray-500 text-sm">
+                  No upcoming shifts this week. Create a roster to get started.
+                </div>
+              ) : (
+                shiftList.map((shift) => (
+                  <UpcomingShiftCard
+                    key={shift.id}
+                    shift={shift}
+                    teamMembers={teamMembers}
+                    onViewWorker={(w) => setWorkerProfileModal(w)}
+                    showGigPlatform={orgSettings?.show_gig_features === true}
+                  />
+                ))
+              )}
             </div>
-          </div>
-
-          <div className="lg:col-span-3">
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <h2 className="text-lg font-bold text-gray-900 mb-4">Quick Actions</h2>
-              <div className="space-y-3">
-                <Link
-                  href="/dashboard/rota"
-                  className="flex items-center gap-3 w-full px-4 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium hover:shadow-md transition-all"
-                >
-                  <Plus className="w-5 h-5 shrink-0" />
-                  Create Roster
-                </Link>
+            {isShiftsOpen && (
+              <div className="mt-6 pt-4 border-t border-gray-100 flex justify-center">
                 <button
                   type="button"
-                  className="flex items-center gap-3 w-full px-4 py-3 bg-white border border-gray-200 rounded-xl font-medium text-gray-700 hover:bg-gray-50 transition-all"
+                  onClick={() => setIsShiftsOpen(false)}
+                  className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+                >
+                  <ChevronUp className="w-4 h-4 mr-2" />
+                  Close section
+                </button>
+              </div>
+            )}
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            title="Manage Organization Roles"
+            open={isRolesOpen}
+            onOpenChange={setIsRolesOpen}
+            defaultOpen={false}
+            compactHeader
+            actionButton={
+              <button
+                type="button"
+                onClick={() => setShowAddRoleModal(true)}
+                className="px-4 py-2 text-sm font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700"
+              >
+                + Add Role
+              </button>
+            }
+          >
+            {roles.length === 0 ? (
+              <p className="text-gray-500 text-sm">No roles yet. Add a role to use in shifts.</p>
+            ) : (
+              <ul className="divide-y divide-gray-100">
+                {roles.map((role) => (
+                  <li key={String(role.id)} className="flex items-center justify-between py-3 first:pt-0">
+                    <div className="flex items-center gap-3">
+                      <span
+                        className="w-4 h-4 rounded-full shrink-0"
+                        style={{ backgroundColor: String(role.colour ?? '#3B82F6') }}
+                      />
+                      <div>
+                        <span className="font-medium text-gray-900">{String(role.name)}</span>
+                        {role.description && (
+                          <p className="text-xs text-gray-500 mt-0.5">{String(role.description)}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditingRole(role)}
+                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+                        title="Edit role"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRoleToDelete(role)}
+                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
+                        title="Delete role"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {isRolesOpen && (
+              <div className="mt-4 pt-4 border-t border-gray-200 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setIsRolesOpen(false)}
+                  className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+                >
+                  <ChevronUp className="w-4 h-4 mr-2" />
+                  Close section
+                </button>
+              </div>
+            )}
+          </CollapsibleSection>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="mt-6">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+            <h2 className="text-lg font-bold text-gray-900 mb-4">Quick Actions</h2>
+            <div className="flex flex-wrap gap-3">
+              <Link
+                href="/dashboard/rota"
+                className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium hover:shadow-md transition-all"
+              >
+                <Plus className="w-5 h-5 shrink-0" />
+                Create Roster
+              </Link>
+              {orgSettings?.show_gig_features && (
+                <Link
+                  href="/dashboard/gigs/create"
+                  className="flex items-center gap-3 px-4 py-3 bg-white border border-gray-200 rounded-xl font-medium text-gray-700 hover:bg-gray-50 transition-all"
                 >
                   <ArrowRight className="w-5 h-5 shrink-0" />
                   Post Gig Shift
-                </button>
-                <Link
-                  href="/dashboard/timekeeping"
-                  className="flex items-center gap-3 w-full px-4 py-3 bg-white border border-gray-200 rounded-xl font-medium text-gray-700 hover:bg-gray-50 transition-all"
-                >
-                  <Clock className="w-5 h-5 shrink-0" />
-                  Approve Timesheets
-                  {stats.pendingTimesheets > 0 && (
-                    <span className="ml-auto bg-amber-100 text-amber-800 text-xs font-semibold px-2 py-0.5 rounded-full">
-                      {stats.pendingTimesheets}
-                    </span>
-                  )}
                 </Link>
-                <button
-                  type="button"
-                  className="flex items-center gap-3 w-full px-4 py-3 bg-white border border-gray-200 rounded-xl font-medium text-gray-700 hover:bg-gray-50 transition-all"
-                >
-                  <UserCircle className="w-5 h-5 shrink-0" />
-                  View Applications
-                  <span className="ml-auto bg-gray-200 text-gray-700 text-xs font-semibold px-2 py-0.5 rounded-full">
-                    12
+              )}
+              <Link
+                href="/dashboard/timekeeping"
+                className="flex items-center gap-3 px-4 py-3 bg-white border border-gray-200 rounded-xl font-medium text-gray-700 hover:bg-gray-50 transition-all"
+              >
+                <Clock className="w-5 h-5 shrink-0" />
+                Approve Timesheets
+                {stats.pendingTimesheets > 0 && (
+                  <span className="ml-auto bg-amber-100 text-amber-800 text-xs font-semibold px-2 py-0.5 rounded-full">
+                    {stats.pendingTimesheets}
                   </span>
-                </button>
-              </div>
+                )}
+              </Link>
+              <Link
+                href="/dashboard/applications"
+                className="flex items-center gap-3 px-4 py-3 bg-white border border-gray-200 rounded-xl font-medium text-gray-700 hover:bg-gray-50 transition-all"
+              >
+                <UserCircle className="w-5 h-5 shrink-0" />
+                View Applications
+                {stats.pendingApplications > 0 && (
+                  <span className="ml-auto bg-amber-100 text-amber-800 text-xs font-semibold px-2 py-0.5 rounded-full">
+                    {stats.pendingApplications}
+                  </span>
+                )}
+              </Link>
             </div>
           </div>
         </div>
 
-        {/* Manage Organization Roles - below Quick Actions */}
-        <div className="mt-6 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-bold text-gray-900">Manage Organization Roles</h2>
-            <button
-              type="button"
-              onClick={() => setShowAddRoleModal(true)}
-              className="px-4 py-2 text-sm font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700"
-            >
-              + Add Role
-            </button>
-          </div>
-          {roles.length === 0 ? (
-            <p className="text-gray-500 text-sm">No roles yet. Add a role to use in shifts.</p>
-          ) : (
-            <ul className="divide-y divide-gray-100">
-              {roles.map((role) => (
-                <li key={String(role.id)} className="flex items-center justify-between py-3 first:pt-0">
-                  <div className="flex items-center gap-3">
-                    <span
-                      className="w-4 h-4 rounded-full shrink-0"
-                      style={{ backgroundColor: String(role.colour ?? '#3B82F6') }}
-                    />
-                    <div>
-                      <span className="font-medium text-gray-900">{String(role.name)}</span>
-                      {role.description && (
-                        <p className="text-xs text-gray-500 mt-0.5">{String(role.description)}</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setEditingRole(role)}
-                      className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
-                      title="Edit role"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRoleToDelete(role)}
-                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
-                      title="Delete role"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        {/* Bottom: My Employees | My Gig Workers */}
+        {/* Bottom: My Employees | My Gig Workers (Gig only when feature enabled) */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="p-4 border-b border-gray-200 flex justify-between items-center">
@@ -471,15 +553,17 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-              <h2 className="text-lg font-bold text-gray-900">My Gig Workers</h2>
-              <span className="text-sm text-gray-500">Coming soon</span>
+          {orgSettings?.show_gig_features && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+                <h2 className="text-lg font-bold text-gray-900">My Gig Workers</h2>
+                <span className="text-sm text-gray-500">Coming soon</span>
+              </div>
+              <div className="p-4">
+                <p className="text-sm text-gray-500 py-4">No gig workers yet.</p>
+              </div>
             </div>
-            <div className="p-4">
-              <p className="text-sm text-gray-500 py-4">No gig workers yet.</p>
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -487,6 +571,8 @@ export default function DashboardPage() {
         <WorkerProfileModal
           worker={workerProfileModal}
           onClose={() => setWorkerProfileModal(null)}
+          senderId={currentUserId}
+          senderName={userName}
         />
       )}
 
@@ -772,10 +858,12 @@ function UpcomingShiftCard({
   shift,
   teamMembers,
   onViewWorker,
+  showGigPlatform = false,
 }: {
   shift: ShiftRow
   teamMembers: Record<string, unknown>[]
   onViewWorker: (worker: WorkerProfileData) => void
+  showGigPlatform?: boolean
 }) {
   const roleName = shift.role?.name ?? 'Shift'
   const venueName = shift.venue?.name ?? ''
@@ -795,8 +883,10 @@ function UpcomingShiftCard({
     const fullMember = teamMembers.find((m) => String(m.id) === String(tmId)) as Record<string, unknown> | undefined
     const fullProfile = fullMember?.profile as { full_name?: string; email?: string } | undefined
     const roles = fullMember?.roles as { role?: { name?: string } }[] | undefined
+    const userId = fullMember?.user_id as string | undefined
     return {
       id: String(tmId),
+      user_id: userId ?? null,
       profile: { full_name: fullProfile?.full_name ?? name, email: fullProfile?.email ?? profile?.email },
       employment_type: fullMember?.employment_type as string | undefined,
       roles,
@@ -872,7 +962,7 @@ function UpcomingShiftCard({
       {openSlots > 0 && filled === 0 && (
         <p className="mt-2 text-sm text-gray-500">No worker allocated yet.</p>
       )}
-      {openSlots > 0 && (
+      {openSlots > 0 && showGigPlatform && (
         <button
           type="button"
           className="mt-3 text-sm font-medium text-purple-600 hover:text-purple-700"

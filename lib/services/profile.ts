@@ -9,6 +9,31 @@ export async function updateProfileFullName(profileId: string, fullName: string)
   if (error) throw new Error(error.message)
 }
 
+export type UpdateProfilePersonalPayload = {
+  firstName: string
+  lastName: string
+  phone: string | null
+  /** Required when creating a new profile (upsert insert). */
+  email?: string | null
+}
+
+/** Create or update current user's personal profile. Uses upsert so new users can save without an existing row. */
+export async function updateProfilePersonal(userId: string, payload: UpdateProfilePersonalPayload): Promise<void> {
+  const fullName = [payload.firstName.trim(), payload.lastName.trim()].filter(Boolean).join(' ') || null
+  const row = {
+    id: userId,
+    first_name: payload.firstName.trim() || null,
+    last_name: payload.lastName.trim() || null,
+    full_name: fullName,
+    phone: payload.phone?.trim() || null,
+    ...(payload.email != null && payload.email !== '' ? { email: payload.email.trim() } : {}),
+  }
+  const { error } = await supabase
+    .from('profiles')
+    .upsert(row, { onConflict: 'id' })
+  if (error) throw new Error(error.message)
+}
+
 export type WorkerProfileData = {
   teamMemberId: string
   userId: string | null
@@ -23,6 +48,8 @@ export type WorkerProfileData = {
   roles: { id: string; name: string; colour?: string }[]
   certifications: string[]
   organisationId: string
+  hierarchyLevel?: string
+  status?: string
 }
 
 /** Fetch full worker profile for current user's team member record (for profile page). */
@@ -38,7 +65,9 @@ export async function getWorkerProfile(teamMemberId: string): Promise<WorkerProf
       primary_venue_id,
       rating,
       certifications,
-      profile:profiles(full_name, email, avatar_url, phone),
+      hierarchy_level,
+      status,
+      profile:profiles!team_members_user_id_fkey(full_name, email, avatar_url, phone),
       primary_venue:venues(id, name, address),
       roles:team_member_roles(
         role:roles(id, name, colour)
@@ -69,6 +98,8 @@ export async function getWorkerProfile(teamMemberId: string): Promise<WorkerProf
     roles: rolesData.map((r) => r.role).filter(Boolean) as unknown as { id: string; name: string; colour?: string }[],
     certifications: certList,
     organisationId: member.organisation_id,
+    hierarchyLevel: (member as { hierarchy_level?: string }).hierarchy_level ?? 'worker',
+    status: (member as { status?: string }).status ?? 'active',
   }
 }
 
@@ -188,4 +219,20 @@ export async function updateProfilePicture(userId: string, file: File): Promise<
   if (updateError) throw new Error(updateError.message)
 
   return publicUrl
+}
+
+/** Change current user password. Verifies current password then sets new one. */
+export async function changePassword(
+  email: string,
+  currentPassword: string,
+  newPassword: string
+): Promise<void> {
+  const { error: signInError } = await supabase.auth.signInWithPassword({
+    email,
+    password: currentPassword,
+  })
+  if (signInError) throw new Error('Current password is incorrect.')
+  if (newPassword.length < 6) throw new Error('New password must be at least 6 characters.')
+  const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
+  if (updateError) throw new Error(updateError.message)
 }

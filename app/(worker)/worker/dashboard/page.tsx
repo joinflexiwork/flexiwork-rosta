@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { Clock, MapPin, CheckCircle } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Clock, MapPin, CheckCircle, LogOut, UserPlus } from 'lucide-react'
 import { getMyAllocatedShifts } from '@/lib/services/allocations'
 import { clockIn, clockOut } from '@/lib/services/timekeeping'
 import { supabase } from '@/lib/supabase'
@@ -12,6 +13,7 @@ import ShiftInvitationsList from '@/components/ShiftInvitationsList'
 type ShiftAlloc = Record<string, unknown>
 
 export default function WorkerDashboardPage() {
+  const router = useRouter()
   const [upcomingShifts, setUpcomingShifts] = useState<ShiftAlloc[]>([])
   const [todayShift, setTodayShift] = useState<ShiftAlloc | null>(null)
   const [timekeeping, setTimekeeping] = useState<Record<string, unknown> | null>(null)
@@ -20,6 +22,7 @@ export default function WorkerDashboardPage() {
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState<string | null>(null)
   const [location, setLocation] = useState('')
+  const [incompleteProfile, setIncompleteProfile] = useState(false)
 
   useEffect(() => {
     if (navigator.geolocation) {
@@ -56,16 +59,24 @@ export default function WorkerDashboardPage() {
     async function load() {
       try {
         const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return
+        if (!user) {
+          setLoading(false)
+          return
+        }
         setUserId(user.id)
 
         const { data: tm } = await supabase
           .from('team_members')
           .select('id')
           .eq('user_id', user.id)
-          .single()
-        if (!tm) return
-        setTeamMemberId(tm.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (tm) {
+          setTeamMemberId(tm.id)
+        } else {
+          setIncompleteProfile(true)
+        }
 
         const shifts = await getMyAllocatedShifts(user.id)
         setUpcomingShifts(shifts)
@@ -77,7 +88,7 @@ export default function WorkerDashboardPage() {
         })
         setTodayShift(todayAlloc ?? null)
 
-        if (todayAlloc) {
+        if (todayAlloc && tm) {
           const { data: tk } = await supabase
             .from('timekeeping_records')
             .select('*')
@@ -155,6 +166,39 @@ export default function WorkerDashboardPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-gray-600">Loading...</div>
+      </div>
+    )
+  }
+
+  if (incompleteProfile && !teamMemberId) {
+    return (
+      <div className="max-w-md mx-auto p-6">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
+          <h2 className="text-lg font-bold text-amber-900 mb-2">Profile incomplete</h2>
+          <p className="text-amber-800 text-sm mb-6">
+            You are not yet assigned to an organisation. Please contact your employer or continue registration.
+          </p>
+          <div className="flex flex-col gap-3">
+            <Link
+              href="/onboarding"
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
+            >
+              <UserPlus className="w-5 h-5" />
+              Continue registration
+            </Link>
+            <button
+              type="button"
+              onClick={async () => {
+                await supabase.auth.signOut()
+                router.push('/auth/login')
+              }}
+              className="flex items-center justify-center gap-2 px-4 py-3 border border-red-300 text-red-700 rounded-lg font-medium hover:bg-red-50"
+            >
+              <LogOut className="w-5 h-5" />
+              Logout
+            </button>
+          </div>
+        </div>
       </div>
     )
   }

@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { Clock, Star, Calendar, Briefcase } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Clock, Star, Calendar, Briefcase, LogOut, UserPlus } from 'lucide-react'
 import { getWorkerShifts } from '@/lib/services/allocations'
 import { getMyTeamMemberWithRoles } from '@/lib/services/team'
 import { getOrganisationSettings } from '@/lib/services/settings'
@@ -21,9 +22,11 @@ function getFirstName(fullName: string | null | undefined, metadata?: { first_na
 }
 
 export default function EmployeeDashboard() {
+  const router = useRouter()
   const [upcomingShifts, setUpcomingShifts] = useState<Record<string, unknown>[]>([])
   const [todayShift, setTodayShift] = useState<Record<string, unknown> | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
+  const [incompleteProfile, setIncompleteProfile] = useState(false)
   const [firstName, setFirstName] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [detailAllocationId, setDetailAllocationId] = useState<string | null>(null)
@@ -63,6 +66,9 @@ export default function EmployeeDashboard() {
           getWorkerShifts(user.id),
           getMyTeamMemberWithRoles(user.id),
         ])
+        if (!teamProfileData) {
+          setIncompleteProfile(true)
+        }
         setUpcomingShifts(shifts.slice(0, 5))
         setMyProfile(teamProfileData ?? null)
         const orgId = (teamProfileData as { organisation_id?: string } | null)?.organisation_id
@@ -129,6 +135,39 @@ export default function EmployeeDashboard() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-gray-600">Loading...</div>
+      </div>
+    )
+  }
+
+  if (incompleteProfile && !myProfile) {
+    return (
+      <div className="max-w-md mx-auto p-6">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
+          <h2 className="text-lg font-bold text-amber-900 mb-2">Profile incomplete</h2>
+          <p className="text-amber-800 text-sm mb-6">
+            You are not yet assigned to an organisation. Please contact your employer or continue registration.
+          </p>
+          <div className="flex flex-col gap-3">
+            <Link
+              href="/onboarding"
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700"
+            >
+              <UserPlus className="w-5 h-5" />
+              Continue registration
+            </Link>
+            <button
+              type="button"
+              onClick={async () => {
+                await supabase.auth.signOut()
+                router.push('/auth/login')
+              }}
+              className="flex items-center justify-center gap-2 px-4 py-3 border border-red-300 text-red-700 rounded-lg font-medium hover:bg-red-50"
+            >
+              <LogOut className="w-5 h-5" />
+              Logout
+            </button>
+          </div>
+        </div>
       </div>
     )
   }

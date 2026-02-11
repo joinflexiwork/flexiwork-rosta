@@ -6,6 +6,7 @@ import { getWeeklyRota, createRotaShift, publishRotaWeek } from '@/lib/services/
 import { getRolesByOrg } from '@/lib/services/roles'
 import { getVenuesByOrg } from '@/lib/services/venues'
 import { getOrganisationIdForCurrentUser } from '@/lib/services/organisations'
+import { getOrganisationSettings } from '@/lib/services/settings'
 import { supabase } from '@/lib/supabase'
 import FillShiftModal, { type ShiftRow } from '@/components/roster/FillShiftModal'
 
@@ -28,6 +29,7 @@ export default function RotaPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showAllocateModal, setShowAllocateModal] = useState(false)
   const [selectedShift, setSelectedShift] = useState<ShiftRow | null>(null)
+  const [showGigFeatures, setShowGigFeatures] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -46,12 +48,14 @@ export default function RotaPage() {
       if (!orgId) return
       setOrganisationId(orgId)
 
-      const [rolesData, venuesData] = await Promise.all([
+      const [rolesData, venuesData, settings] = await Promise.all([
         getRolesByOrg(orgId),
         getVenuesByOrg(orgId),
+        getOrganisationSettings(orgId).catch(() => ({ show_ratings: true, show_gig_features: false })),
       ])
       setRoles(rolesData as unknown as Record<string, unknown>[])
       setVenues(venuesData as unknown as Record<string, unknown>[])
+      setShowGigFeatures(settings.show_gig_features === true)
       if (venuesData.length > 0) {
         setSelectedVenue((venuesData[0] as { id: string }).id)
       }
@@ -252,20 +256,22 @@ export default function RotaPage() {
           </div>
         </div>
 
-        <div className="bg-gradient-primary rounded-xl p-6 text-white">
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Users className="w-6 h-6" />
-            </div>
-            <div className="flex-1">
-              <h3 className="font-bold text-lg mb-2">Unfilled Shifts? Send to Gig Platform</h3>
-              <p className="text-blue-100 mb-4">Enable automatic posting (Coming in Phase 2)</p>
-              <button type="button" disabled className="px-6 py-2 bg-white/20 text-white rounded-lg opacity-50 cursor-not-allowed">
-                Coming Soon
-              </button>
+        {showGigFeatures && (
+          <div className="bg-gradient-primary rounded-xl p-6 text-white">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Users className="w-6 h-6" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-bold text-lg mb-2">Unfilled Shifts? Send to Gig Platform</h3>
+                <p className="text-blue-100 mb-4">Enable automatic posting (Coming in Phase 2)</p>
+                <button type="button" disabled className="px-6 py-2 bg-white/20 text-white rounded-lg opacity-50 cursor-not-allowed">
+                  Coming Soon
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {showCreateModal && (

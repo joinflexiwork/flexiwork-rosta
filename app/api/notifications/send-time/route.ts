@@ -83,7 +83,7 @@ export async function POST(request: Request) {
       const tkId = recordId ?? timekeepingId
       const { data: rec } = await supabase
         .from('timekeeping_records')
-        .select('id, rota_shift_id, team_member:team_members(user_id, profile:profiles(full_name))')
+        .select('id, rota_shift_id, team_member:team_members(user_id, profile:profiles!team_members_user_id_fkey(full_name))')
         .eq('id', tkId)
         .single()
 

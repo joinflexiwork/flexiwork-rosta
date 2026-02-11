@@ -4,15 +4,22 @@
   "private": true,
   "scripts": {
     "backup:mentlast": "powershell -ExecutionPolicy Bypass -File ./scripts/backup-to-mentlast.ps1",
+    "backup:supabase": "node scripts/backup-supabase.js",
     "dev": "next dev",
     "dev:clean": "node -e \"try{require('fs').unlinkSync('.next/dev.lock');console.log('Removed .next/dev.lock');}catch(e){}\" && next dev",
     "dev:port": "next dev --port 3001",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run --reporter=verbose",
+    "test:quick": "vitest run --reporter=verbose",
+    "test:db": "tsx scripts/test-db-connection.ts",
+    "test:e2e": "playwright test --reporter=line",
+    "test:all": "npm run test:quick && npm run test:db && npm run test:e2e"
   },
   "dependencies": {
     "@supabase/auth-helpers-nextjs": "^0.15.0",
+    "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.95.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -34,6 +41,13 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "@playwright/test": "^1.49.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.0.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^25.0.1",
+    "tsx": "^4.19.2",
+    "vitest": "^2.1.6"
   }
 }

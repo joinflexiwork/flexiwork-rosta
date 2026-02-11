@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import UniversalHeader from '@/components/UniversalHeader'
-import NotificationBell from '@/components/NotificationBell'
+import DashboardHeaderActions from '@/components/dashboard/DashboardHeaderActions'
 import EmployerNav from '@/components/layout/EmployerNav'
 import { getOrganisationIdForCurrentUser, hasTeamMembership } from '@/lib/services/organisations'
 import { supabase } from '@/lib/supabase'
@@ -22,7 +22,7 @@ export default function DashboardLayout({
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) {
-          router.replace('/login')
+          router.replace('/auth/login')
           return
         }
         if (pathname === '/dashboard' || pathname === '/dashboard/') {
@@ -61,7 +61,7 @@ export default function DashboardLayout({
 
   return (
     <>
-      <UniversalHeader backFallbackHref="/dashboard" rightSlot={<NotificationBell />} />
+      <UniversalHeader backFallbackHref="/dashboard" rightSlot={<DashboardHeaderActions />} />
       <EmployerNav />
       <main className="min-h-screen pt-24 px-4">
         {children}
