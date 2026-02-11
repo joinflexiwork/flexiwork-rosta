@@ -6,7 +6,7 @@
   publish = ".next"
 
 [build.environment]
-  NODE_VERSION = "18"
+  NODE_VERSION = "20.9.0"
   NEXT_TELEMETRY_DISABLED = "1"
 
 # Essential Next.js plugin: enables serverless functions for SSR/API and correct routing.
