@@ -34,20 +34,20 @@
   },
   "devDependencies": {
     "@netlify/plugin-nextjs": "^5.15.8",
-    "@tailwindcss/postcss": "^4",
+    "@playwright/test": "^1.49.0",
+    "@tailwindcss/postcss": "^4.1.18",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.0.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^4.3.4",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
-    "tailwindcss": "^4",
-    "typescript": "^5",
-    "@playwright/test": "^1.49.0",
-    "@testing-library/jest-dom": "^6.6.3",
-    "@testing-library/react": "^16.0.1",
-    "@vitejs/plugin-react": "^4.3.4",
     "jsdom": "^25.0.1",
+    "tailwindcss": "^4",
     "tsx": "^4.19.2",
+    "typescript": "^5",
     "vitest": "^2.1.6"
   }
 }
