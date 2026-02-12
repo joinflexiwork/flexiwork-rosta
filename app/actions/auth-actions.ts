@@ -65,7 +65,7 @@ export async function generatePasswordResetLink(
 
   try {
     const { data, error } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'recover',
+      type: 'recovery',
       email: trimmedEmail,
     })
 

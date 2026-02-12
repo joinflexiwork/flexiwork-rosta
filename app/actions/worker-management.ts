@@ -59,7 +59,7 @@ export async function updateWorkerHierarchy(
       return { success: false, error: 'You cannot edit this worker' }
     }
 
-    const allowed = getAllowedLevels(current.level).filter((l) => l !== 'employer')
+    const allowed = getAllowedLevels(current.level).filter((l) => l !== 'employer') as HierarchyLevel[]
     if (!allowed.includes(newLevel)) {
       return { success: false, error: `You cannot assign level: ${newLevel}` }
     }

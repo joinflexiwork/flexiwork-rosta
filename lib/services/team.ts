@@ -173,7 +173,7 @@ export async function updateTeamMemberProfile(
   if (data.status !== undefined) updates.status = data.status
   if (data.hierarchy_level !== undefined && data.hierarchy_level !== null) {
     const level = String(data.hierarchy_level).toLowerCase()
-    if (VALID_HIERARCHY_LEVELS.includes(level)) {
+    if ((VALID_HIERARCHY_LEVELS as readonly string[]).includes(level)) {
       updates.hierarchy_level = level
     }
   }

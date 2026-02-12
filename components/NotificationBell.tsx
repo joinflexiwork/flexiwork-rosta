@@ -176,10 +176,10 @@ export default function NotificationBell() {
                   {notifications.slice(0, 5).map((n) => (
                     <div
                       key={n.id}
-                      className={`px-3 py-2 text-sm border-b border-gray-50 last:border-0 ${n.read ? 'text-gray-500' : 'text-gray-900'}`}
+                      className={`px-3 py-2 text-sm border-b border-gray-50 last:border-0 ${n.is_read ? 'text-gray-500' : 'text-gray-900'}`}
                     >
                       <p className="font-medium">{n.title}</p>
-                      {n.message && <p className="text-gray-600 truncate">{n.message}</p>}
+                      {n.body && <p className="text-gray-600 truncate">{n.body}</p>}
                     </div>
                   ))}
                 </>

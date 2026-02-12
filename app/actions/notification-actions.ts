@@ -53,7 +53,7 @@ export async function shouldSendNotification(
 
   const { data: prefs } = await supabase
     .from('notification_preferences')
-    .select('hierarchy_changes, shift_changes, approvals, system_alerts, quiet_hours_start, quiet_hours_end')
+    .select('hierarchy_changes, shift_changes, approvals, system_alerts, quiet_hours_start, quiet_hours_end, timezone')
     .eq('profile_id', profileId)
     .eq('organisation_id', organisationId)
     .maybeSingle()
@@ -78,7 +78,7 @@ export async function shouldSendNotification(
     const end = prefs.quiet_hours_end as string | null
     if (start && end) {
       const now = new Date()
-      const tz = prefs.timezone as string | undefined
+      const tz = (prefs as { timezone?: string }).timezone
       const nowTime = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz || 'Europe/Budapest' })
       const [h, m] = nowTime.split(':').map(Number)
       const nowMinutes = h * 60 + m

@@ -122,13 +122,13 @@ export async function getProfilePageData(): Promise<ProfilePageData | null> {
     .in('status', ['active', 'pending'])
     .limit(1)
 
-  const member = memberRows?.[0] as {
+  const member = memberRows?.[0] as unknown as {
     id: string
     organisation_id: string
     hierarchy_level?: string
     primary_venue_id?: string | null
     joined_at?: string | null
-    primary_venue?: { id: string; name: string } | null
+    primary_venue?: { id: string; name: string } | { id: string; name: string }[] | null
   } | undefined
 
   let organisationId: string | null = ownedOrg?.id ?? member?.organisation_id ?? null
@@ -138,7 +138,8 @@ export async function getProfilePageData(): Promise<ProfilePageData | null> {
     ? 'employer'
     : ((member?.hierarchy_level as HierarchyLevel) ?? 'worker')
   let primaryVenueId: string | null = member?.primary_venue_id ?? null
-  let primaryVenueName: string | null = member?.primary_venue?.name ?? null
+  const pv = member?.primary_venue
+  let primaryVenueName: string | null = (Array.isArray(pv) ? pv[0]?.name : pv?.name) ?? null
   let memberSince: string | null = member?.joined_at ?? null
   const teamMemberId: string | null = member?.id ?? null
 

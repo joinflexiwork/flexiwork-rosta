@@ -48,14 +48,14 @@ export async function getUpcomingShiftsForTeamMember(
       return []
     }
 
-    const rows = (data ?? []) as {
+    const rows = (data ?? []) as unknown as {
       rota_shift_id?: string
       shift?: {
         shift_date: string
         start_time: string
         end_time: string
-        venue?: { name?: string } | null
-        role?: { name?: string } | null
+        venue?: { name?: string } | { name?: string }[] | null
+        role?: { name?: string } | { name?: string }[] | null
       } | null
     }[]
 
@@ -64,12 +64,14 @@ export async function getUpcomingShiftsForTeamMember(
       const s = row.shift
       if (!s || !s.shift_date) continue
       if (s.shift_date < today) continue
+      const venue = s.venue as { name?: string } | { name?: string }[] | null | undefined
+      const role = s.role as { name?: string } | { name?: string }[] | null | undefined
       out.push({
         shift_date: s.shift_date,
         start_time: s.start_time ?? '',
         end_time: s.end_time ?? '',
-        venue_name: s.venue?.name ?? '—',
-        role_name: s.role?.name ?? '—',
+        venue_name: (Array.isArray(venue) ? venue[0]?.name : venue?.name) ?? '—',
+        role_name: (Array.isArray(role) ? role[0]?.name : role?.name) ?? '—',
         rota_shift_id: row.rota_shift_id,
       })
     }
@@ -122,14 +124,14 @@ export async function getAllShiftsForTeamMember(
       return []
     }
 
-    const rows = (data ?? []) as {
+    const rows = (data ?? []) as unknown as {
       status?: string
       shift?: {
         shift_date: string
         start_time: string
         end_time: string
-        venue?: { name?: string } | null
-        role?: { name?: string } | null
+        venue?: { name?: string } | { name?: string }[] | null
+        role?: { name?: string } | { name?: string }[] | null
       } | null
     }[]
 
@@ -137,12 +139,14 @@ export async function getAllShiftsForTeamMember(
     for (const row of rows) {
       const s = row.shift
       if (!s || !s.shift_date) continue
+      const v = s.venue as { name?: string } | { name?: string }[] | null | undefined
+      const r = s.role as { name?: string } | { name?: string }[] | null | undefined
       out.push({
         shift_date: s.shift_date,
         start_time: s.start_time ?? '',
         end_time: s.end_time ?? '',
-        venue_name: s.venue?.name ?? '—',
-        role_name: s.role?.name ?? '—',
+        venue_name: (Array.isArray(v) ? v[0]?.name : v?.name) ?? '—',
+        role_name: (Array.isArray(r) ? r[0]?.name : r?.name) ?? '—',
         status: row.status ?? '—',
       })
     }
@@ -199,15 +203,15 @@ export async function getShiftsForWIW(teamMemberId: string): Promise<ShiftForWIW
       return []
     }
 
-    const rows = (data ?? []) as {
+    const rows = (data ?? []) as unknown as {
       id?: string
       rota_shift_id?: string
       shift?: {
         shift_date: string
         start_time: string
         end_time: string
-        venue?: { name?: string } | null
-        role?: { name?: string } | null
+        venue?: { name?: string } | { name?: string }[] | null
+        role?: { name?: string } | { name?: string }[] | null
       } | null
     }[]
 
@@ -216,13 +220,15 @@ export async function getShiftsForWIW(teamMemberId: string): Promise<ShiftForWIW
       const s = row.shift
       if (!s || !s.shift_date) continue
       if (s.shift_date < fromStr || s.shift_date > toStr) continue
+      const v = s.venue as { name?: string } | { name?: string }[] | null | undefined
+      const r = s.role as { name?: string } | { name?: string }[] | null | undefined
       out.push({
         id: row.id,
         shift_date: s.shift_date,
         start_time: s.start_time ?? '',
         end_time: s.end_time ?? '',
-        venue_name: s.venue?.name ?? '—',
-        role_name: s.role?.name ?? '—',
+        venue_name: (Array.isArray(v) ? v[0]?.name : v?.name) ?? '—',
+        role_name: (Array.isArray(r) ? r[0]?.name : r?.name) ?? '—',
         rota_shift_id: row.rota_shift_id,
       })
     }

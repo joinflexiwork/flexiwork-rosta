@@ -12,6 +12,13 @@ const DEFAULT_PREFS: NotificationPreferences = {
   system_alerts: { in_app: true, email: true, push: false },
 }
 
+const NOTIFICATION_TYPES = [
+  { id: 'hierarchy_changes' as const, label: 'Role/Hierarchy changes' },
+  { id: 'shift_changes' as const, label: 'Shift invitations & changes' },
+  { id: 'approvals' as const, label: 'Approvals' },
+  { id: 'system_alerts' as const, label: 'System alerts' },
+]
+
 export default function NotificationSettingsPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [organisationId, setOrganisationId] = useState<string | null>(null)
@@ -116,7 +123,7 @@ export default function NotificationSettingsPage() {
                   <input
                     type="checkbox"
                     checked={prefs[id]?.email ?? true}
-                    onChange={(e) => setChannel(id, 'email', e.target.checked)}
+                    onChange={(e) => updateCategory(id, 'email', e.target.checked)}
                     className="rounded border-gray-300"
                   />
                 </td>
@@ -124,7 +131,7 @@ export default function NotificationSettingsPage() {
                   <input
                     type="checkbox"
                     checked={prefs[id]?.push ?? true}
-                    onChange={(e) => setChannel(id, 'push', e.target.checked)}
+                    onChange={(e) => updateCategory(id, 'push', e.target.checked)}
                     className="rounded border-gray-300"
                   />
                 </td>
@@ -132,7 +139,7 @@ export default function NotificationSettingsPage() {
                   <input
                     type="checkbox"
                     checked={prefs[id]?.in_app ?? true}
-                    onChange={(e) => setChannel(id, 'in_app', e.target.checked)}
+                    onChange={(e) => updateCategory(id, 'in_app', e.target.checked)}
                     className="rounded border-gray-300"
                   />
                 </td>

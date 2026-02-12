@@ -1,6 +1,5 @@
-import type { Config } from "tailwindcss";
-
-const config: Config = {
+/** @type {import('tailwindcss').Config} */
+module.exports = {
   content: [
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -9,11 +8,8 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Clean white base
         background: "#FFFFFF",
         foreground: "#1F2937",
-
-        // Accent colors (minimal use)
         primary: {
           DEFAULT: "#3B82F6",
           dark: "#2563EB",
@@ -24,15 +20,11 @@ const config: Config = {
           dark: "#7C3AED",
           light: "#A855F7",
         },
-
-        // Gray scale
         muted: {
           DEFAULT: "#F9FAFB",
           foreground: "#6B7280",
         },
         border: "#E5E7EB",
-
-        // Status (minimal use)
         success: "#10B981",
         warning: "#F59E0B",
         error: "#EF4444",
@@ -45,5 +37,3 @@ const config: Config = {
   },
   plugins: [],
 };
-
-export default config;

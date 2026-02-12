@@ -49,16 +49,7 @@ export async function getRecentNotifications(userId: string, limit = 10): Promis
     if (typeof window !== 'undefined') console.error('[notifications] getRecentNotifications failed:', error.message, error)
     return []
   }
-  return (data ?? []).map((r: { id: string; body?: string; is_read?: boolean; [k: string]: unknown }) => ({
-    id: r.id,
-    recipient_id: (r as { recipient_id: string }).recipient_id,
-    category: (r as { category: string }).category,
-    event_type: (r as { event_type: string }).event_type,
-    title: (r as { title: string }).title,
-    body: r.body ?? null,
-    is_read: r.is_read ?? false,
-    created_at: (r as { created_at: string }).created_at,
-  })) as NotificationRow[]
+  return (data ?? []) as NotificationRow[]
 }
 
 export async function markNotificationRead(id: string): Promise<void> {

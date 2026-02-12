@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { Users, UserPlus, X, Trash2, Star } from 'lucide-react'
-import { getTeamMembers, deleteTeamMember } from '@/lib/services/team'
+import { getTeamMembers, deleteTeamMember, inviteManager, inviteEmployee } from '@/lib/services/team'
 import { getRolesByOrg } from '@/lib/services/roles'
 import { getVenuesByOrg } from '@/lib/services/venues'
 import { getOrganisationIdForCurrentUser } from '@/lib/services/organisations'
